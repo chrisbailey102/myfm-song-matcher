@@ -13,35 +13,18 @@
       body {
         margin: 0;
         padding: 1rem 1.25rem 2rem;
-        max-width: 1400px;
+        max-width: 1500px;
         margin-inline: auto;
       }
-      h1 {
-        font-size: 1.25rem;
-        font-weight: 600;
-      }
-      h2 {
-        font-size: 1rem;
-        font-weight: 600;
-        margin: 1.25rem 0 0.5rem;
-        color: #bdc1c6;
-      }
-      p {
-        color: #9aa0a6;
-        max-width: 72ch;
-      }
+      h1 { font-size: 1.25rem; font-weight: 600; }
+      h2 { font-size: 1rem; color: #bdc1c6; margin: 1rem 0 0.5rem; }
+      p, .hint { color: #9aa0a6; max-width: 72ch; font-size: 0.9rem; }
       .panel {
         border: 1px solid #30343c;
         border-radius: 8px;
-        padding: 1rem 1rem 1.1rem;
+        padding: 1rem;
         margin: 1rem 0;
         background: #16191f;
-      }
-      nav {
-        display: flex;
-        gap: 0.5rem;
-        margin: 1rem 0;
-        flex-wrap: wrap;
       }
       button {
         background: #1a73e8;
@@ -52,202 +35,305 @@
         cursor: pointer;
         font-size: 0.9rem;
       }
-      button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-      button.secondary {
-        background: #30343c;
-        color: #e8eaed;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        font-size: 0.8rem;
-      }
-      th,
-      td {
-        border: 1px solid #30343c;
-        padding: 0.35rem 0.5rem;
-        text-align: left;
-        vertical-align: top;
-      }
-      th {
-        background: #1f232b;
-        position: sticky;
-        top: 0;
-      }
-      .wrap {
-        overflow: auto;
-        max-height: 70vh;
-        border: 1px solid #30343c;
-        border-radius: 8px;
-      }
-      .meta {
-        font-size: 0.75rem;
-        color: #9aa0a6;
-        margin-bottom: 0.5rem;
-      }
-      .status {
-        font-size: 0.85rem;
-        color: #fdd663;
-        margin-top: 0.5rem;
-        white-space: pre-wrap;
-      }
-      input[type="search"] {
-        width: min(420px, 100%);
-        padding: 0.4rem 0.6rem;
-        border-radius: 6px;
-        border: 1px solid #30343c;
+      button.secondary { background: #30343c; color: #e8eaed; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      input, select, textarea {
         background: #0f1115;
+        border: 1px solid #30343c;
         color: #e8eaed;
+        border-radius: 6px;
+        padding: 0.4rem 0.55rem;
+        font-size: 0.9rem;
       }
-      input[type="file"] {
-        max-width: 100%;
-        font-size: 0.85rem;
-        color: #bdc1c6;
-      }
-      code {
-        font-size: 0.85em;
-        background: #1f232b;
-        padding: 0.1em 0.35em;
-        border-radius: 4px;
-      }
+      input[type="text"], input[type="url"], select { width: min(480px, 100%); }
+      textarea { width: 100%; min-height: 3rem; }
+      table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+      th, td { border: 1px solid #30343c; padding: 0.3rem 0.45rem; text-align: left; vertical-align: top; }
+      th { background: #1f232b; position: sticky; top: 0; }
+      .wrap { overflow: auto; max-height: 65vh; border: 1px solid #30343c; border-radius: 8px; }
+      .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.4rem 0; }
+      .status { color: #fdd663; font-size: 0.85rem; margin-top: 0.5rem; }
+      .badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 4px; font-size: 0.75rem; background: #30343c; }
+      .override input { width: 4.5rem; }
+      code { background: #1f232b; padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.85em; }
+      #auth-bar { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
     </style>
   </head>
   <body>
     <h1>MyFM Song Matcher</h1>
-    <p>
-      Run <code>npm run start:ui</code> from the project folder (with <code>.env</code> containing
-      Spotify credentials). You can pick your Excel file here or keep using the CLI.
-    </p>
+    <div id="auth-bar" class="panel">
+      <span id="auth-status">Checking login…</span>
+      <button type="button" id="btn-login" hidden>Connect Spotify</button>
+      <button type="button" id="btn-logout" class="secondary" hidden>Log out</button>
+    </div>
 
-    <div class="panel">
-      <h2>Enrich from Excel</h2>
-      <p style="margin-top: 0">
-        Choose your <code>.xlsx</code> (Artist + Title columns). This calls Spotify for each row;
-        large lists can take several minutes. When it finishes, your browser downloads
-        <code>catalog_enriched.csv</code> and a copy is saved under <code>out/</code> for the table
-        below.
-      </p>
-      <input type="file" id="xlsx" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-      <div style="margin-top: 0.65rem">
-        <button type="button" id="btn-enrich">Run Spotify enrich</button>
+    <div id="main-app" hidden>
+      <div class="panel">
+        <h2 style="margin-top:0">New project from playlist</h2>
+        <p class="hint">Private playlists work after Spotify login. Paste a URL or pick from your library.</p>
+        <div class="row">
+          <label>Playlist URL</label>
+          <input type="url" id="playlist-url" placeholder="https://open.spotify.com/playlist/…" />
+        </div>
+        <div class="row">
+          <label>Or pick</label>
+          <select id="playlist-pick"><option value="">— load playlists —</option></select>
+          <button type="button" id="btn-load-playlists" class="secondary">Refresh my playlists</button>
+        </div>
+        <div class="row">
+          <label>Project name</label>
+          <input type="text" id="project-name" placeholder="Optional — defaults to playlist name" />
+        </div>
+        <div class="row">
+          <label>Brief</label>
+          <textarea id="project-brief" placeholder="Era, energy, vibe (optional)"></textarea>
+        </div>
+        <button type="button" id="btn-create-project">Import &amp; enrich</button>
+        <div class="status" id="create-status" hidden></div>
       </div>
-      <div class="status" id="enrich-status" hidden></div>
+
+      <div class="panel">
+        <h2 style="margin-top:0">Projects</h2>
+        <div class="row">
+          <button type="button" id="btn-refresh-projects" class="secondary">Refresh</button>
+        </div>
+        <div id="project-list"></div>
+      </div>
+
+      <div id="project-detail" hidden>
+        <div class="panel">
+          <h2 style="margin-top:0" id="detail-title"></h2>
+          <p class="hint" id="detail-meta"></p>
+          <div class="status" id="job-status"></div>
+          <div class="row">
+            <button type="button" id="btn-load-pairs">Show pair candidates</button>
+            <button type="button" id="btn-export-csv" class="secondary">Download songs CSV</button>
+          </div>
+        </div>
+        <h2>Songs <span class="hint">(edit BPM / Camelot overrides — saved automatically)</span></h2>
+        <div class="wrap" id="songs-table"></div>
+        <h2>Pair candidates</h2>
+        <div class="wrap" id="pairs-table"></div>
+      </div>
     </div>
 
-    <h2>Browse outputs</h2>
-    <nav>
-      <button type="button" id="btn-catalog">Load catalog</button>
-      <button type="button" id="btn-pairs" class="secondary">Load pairs</button>
-    </nav>
-    <label for="q">Filter rows</label>
-    <div style="margin: 0.35rem 0 0.75rem">
-      <input type="search" id="q" placeholder="Filter by any cell text…" />
-    </div>
-    <div class="meta" id="meta"></div>
-    <div class="wrap" id="table-host"></div>
+    <details class="panel">
+      <summary>Legacy: Excel upload (no project)</summary>
+      <input type="file" id="xlsx" accept=".xlsx" />
+      <button type="button" id="btn-enrich-xlsx">Run enrich</button>
+      <div class="status" id="xlsx-status" hidden></div>
+    </details>
+
     <script>
-      const meta = document.getElementById("meta");
-      const host = document.getElementById("table-host");
-      const q = document.getElementById("q");
-      const enrichStatus = document.getElementById("enrich-status");
-      const btnEnrich = document.getElementById("btn-enrich");
-      const xlsxInput = document.getElementById("xlsx");
+      const $ = (id) => document.getElementById(id);
+      let currentProjectId = null;
+      let pollTimer = null;
 
       function esc(s) {
-        return String(s ?? "")
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;");
+        return String(s ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
       }
 
-      function render(rows) {
-        if (!rows.length) {
-          host.innerHTML = "<p>No rows yet. Run enrich above or <code>myfm pairs</code> for pair CSV.</p>";
+      async function api(path, opts = {}) {
+        const res = await fetch(path, { credentials: "same-origin", ...opts });
+        const ct = res.headers.get("content-type") || "";
+        const body = ct.includes("json") ? await res.json() : await res.text();
+        if (!res.ok) throw new Error(body.error || body || res.statusText);
+        return body;
+      }
+
+      async function refreshAuth() {
+        const me = await api("/api/auth/me");
+        $("auth-status").textContent = me.loggedIn
+          ? `Logged in as ${me.displayName || me.spotifyId}`
+          : "Not logged in — connect Spotify to import private playlists.";
+        $("btn-login").hidden = me.loggedIn;
+        $("btn-logout").hidden = !me.loggedIn;
+        $("main-app").hidden = !me.loggedIn;
+        if (me.loggedIn) await refreshProjects();
+      }
+
+      $("btn-login").onclick = () => { window.location.href = "/auth/spotify"; };
+      $("btn-logout").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); await refreshAuth(); };
+
+      async function refreshProjects() {
+        const { projects } = await api("/api/projects");
+        const el = $("project-list");
+        if (!projects.length) {
+          el.innerHTML = "<p class='hint'>No projects yet.</p>";
           return;
         }
-        const cols = Object.keys(rows[0]);
-        const filter = (q.value || "").toLowerCase();
-        const filtered = filter
-          ? rows.filter((r) =>
-              cols.some((c) => String(r[c] ?? "").toLowerCase().includes(filter)),
-            )
-          : rows;
-        meta.textContent = `Showing ${filtered.length} of ${rows.length} rows`;
-        const thead = `<tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>`;
-        const tbody = filtered
-          .map(
-            (r) =>
-              `<tr>${cols.map((c) => `<td>${esc(r[c])}</td>`).join("")}</tr>`,
-          )
-          .join("");
-        host.innerHTML = `<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+        el.innerHTML = `<table><thead><tr><th>Name</th><th>Status</th><th>Playlist</th><th></th></tr></thead><tbody>${
+          projects.map((p) => `<tr>
+            <td>${esc(p.name)}</td>
+            <td><span class="badge">${esc(p.status)}</span></td>
+            <td>${p.playlist_url ? `<a href="${esc(p.playlist_url)}" target="_blank" rel="noopener" style="color:#8ab4f8">Spotify</a>` : "—"}</td>
+            <td><button type="button" data-open="${esc(p.id)}">Open</button></td>
+          </tr>`).join("")
+        }</tbody></table>`;
+        el.querySelectorAll("[data-open]").forEach((btn) => {
+          btn.onclick = () => openProject(btn.getAttribute("data-open"));
+        });
       }
 
-      async function load(kind) {
-        meta.textContent = "Loading…";
-        const url = kind === "catalog" ? "/api/catalog" : "/api/pairs";
-        const res = await fetch(url);
-        const data = await res.json();
-        window.__rows = data.rows || [];
-        render(window.__rows);
-      }
+      $("btn-refresh-projects").onclick = () => refreshProjects();
 
-      document.getElementById("btn-catalog").onclick = () => load("catalog");
-      document.getElementById("btn-pairs").onclick = () => load("pairs");
-      q.addEventListener("input", () => render(window.__rows || []));
+      $("btn-load-playlists").onclick = async () => {
+        const { playlists } = await api("/api/spotify/playlists");
+        const sel = $("playlist-pick");
+        sel.innerHTML = '<option value="">— select —</option>' +
+          playlists.map((p) => `<option value="${esc(p.id)}" data-url="${esc(p.url)}">${esc(p.name)} (${p.track_count})</option>`).join("");
+      };
 
-      btnEnrich.onclick = async () => {
-        const f = xlsxInput.files?.[0];
-        if (!f) {
-          enrichStatus.hidden = false;
-          enrichStatus.textContent = "Choose a .xlsx file first.";
-          return;
-        }
-        enrichStatus.hidden = false;
-        enrichStatus.textContent =
-          "Working… this calls Spotify once per row. Leave this tab open.";
-        btnEnrich.disabled = true;
-        const ac = new AbortController();
-        const t = setTimeout(() => ac.abort(), 20 * 60 * 1000);
+      $("playlist-pick").onchange = () => {
+        const opt = $("playlist-pick").selectedOptions[0];
+        if (opt?.dataset.url) $("playlist-url").value = opt.dataset.url;
+      };
+
+      $("btn-create-project").onclick = async () => {
+        const st = $("create-status");
+        st.hidden = false;
+        st.textContent = "Creating project and starting enrich job…";
         try {
-          const body = new FormData();
-          body.append("file", f, f.name);
-          const res = await fetch("/api/enrich", { method: "POST", body, signal: ac.signal });
-          clearTimeout(t);
-          const ct = res.headers.get("content-type") || "";
-          if (!res.ok) {
-            let msg = res.statusText;
-            try {
-              const j = await res.json();
-              if (j.error) msg = j.error;
-            } catch (_) {}
-            enrichStatus.textContent = "Error: " + msg;
-            return;
-          }
-          if (!ct.includes("csv")) {
-            enrichStatus.textContent = "Unexpected response (not CSV).";
-            return;
-          }
-          const blob = await res.blob();
-          const a = document.createElement("a");
-          a.href = URL.createObjectURL(blob);
-          a.download = "catalog_enriched.csv";
-          a.click();
-          URL.revokeObjectURL(a.href);
-          enrichStatus.textContent =
-            "Done. CSV downloaded and saved to out/catalog_enriched.csv. You can click Load catalog.";
+          const playlistUrl = $("playlist-url").value.trim();
+          const playlistId = $("playlist-pick").value;
+          const body = {
+            name: $("project-name").value.trim(),
+            brief: $("project-brief").value.trim(),
+            playlistUrl: playlistUrl || undefined,
+            playlistId: playlistId || undefined,
+          };
+          const { project, job } = await api("/api/projects", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          st.textContent = `Project created. Enriching in background (job ${job.id.slice(0, 8)}…).`;
+          await refreshProjects();
+          openProject(project.id);
         } catch (e) {
-          enrichStatus.textContent =
-            e.name === "AbortError"
-              ? "Timed out after 20 minutes. Try the CLI for very large catalogs."
-              : "Error: " + String(e.message || e);
-        } finally {
-          btnEnrich.disabled = false;
+          st.textContent = "Error: " + e.message;
         }
       };
+
+      async function openProject(id) {
+        currentProjectId = id;
+        $("project-detail").hidden = false;
+        await loadProjectDetail();
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = setInterval(loadProjectDetail, 3000);
+      }
+
+      async function loadProjectDetail() {
+        if (!currentProjectId) return;
+        const { project, songs, jobs } = await api(`/api/projects/${currentProjectId}`);
+        $("detail-title").textContent = project.name;
+        $("detail-meta").textContent = [
+          project.brief && `Brief: ${project.brief}`,
+          project.playlist_name && `Playlist: ${project.playlist_name}`,
+          `Status: ${project.status}`,
+          `${songs.length} songs`,
+        ].filter(Boolean).join(" · ");
+
+        const running = jobs.find((j) => j.status === "running" || j.status === "pending");
+        const failed = jobs.find((j) => j.status === "failed");
+        const js = $("job-status");
+        if (running) {
+          js.textContent = `${running.type}: ${running.progress}/${running.progress_total} — ${running.progress_label || "…"}`;
+        } else if (failed) {
+          js.textContent = `Job failed: ${failed.error}`;
+        } else {
+          js.textContent = project.status === "ready" ? "Enrich complete." : "";
+        }
+
+        renderSongs(songs);
+      }
+
+      function renderSongs(songs) {
+        if (!songs.length) {
+          $("songs-table").innerHTML = "<p class='hint'>No songs yet.</p>";
+          return;
+        }
+        const cols = ["artist", "title", "tempo", "tempo_override", "camelot", "camelot_override", "bpm_key_source", "needs_review"];
+        const thead = `<tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}<th>Spotify</th></tr>`;
+        const tbody = songs.map((s) => `<tr data-id="${esc(s.id)}">
+          <td>${esc(s.artist)}</td>
+          <td>${esc(s.title)}</td>
+          <td>${esc(s.tempo)}</td>
+          <td class="override"><input type="number" step="0.1" data-f="tempo_override" value="${s.tempo_override ?? ""}" placeholder="—" /></td>
+          <td>${esc(s.camelot)}</td>
+          <td class="override"><input type="text" data-f="camelot_override" value="${esc(s.camelot_override ?? "")}" placeholder="e.g. 8B" /></td>
+          <td>${esc(s.bpm_key_source)}</td>
+          <td>${s.needs_review ? "yes" : ""}</td>
+          <td>${s.spotify_url ? `<a href="${esc(s.spotify_url)}" target="_blank" rel="noopener" style="color:#8ab4f8">↗</a>` : ""}</td>
+        </tr>`).join("");
+        $("songs-table").innerHTML = `<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+        $("songs-table").querySelectorAll("input").forEach((inp) => {
+          inp.onchange = async () => {
+            const row = inp.closest("tr");
+            const id = row.getAttribute("data-id");
+            const tempo = row.querySelector('[data-f="tempo_override"]').value;
+            const camelot = row.querySelector('[data-f="camelot_override"]').value;
+            await api(`/api/songs/${id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                tempo_override: tempo === "" ? null : Number(tempo),
+                camelot_override: camelot === "" ? null : camelot,
+              }),
+            });
+          };
+        });
+      }
+
+      $("btn-load-pairs").onclick = async () => {
+        const { pairs } = await api(`/api/projects/${currentProjectId}/pairs`);
+        if (!pairs.length) {
+          $("pairs-table").innerHTML = "<p class='hint'>No pairs (need BPM + Camelot on songs).</p>";
+          return;
+        }
+        const show = pairs.slice(0, 200);
+        const cols = Object.keys(show[0]);
+        $("pairs-table").innerHTML = `<table><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${
+          show.map((r) => `<tr>${cols.map((c) => `<td>${esc(r[c])}</td>`).join("")}</tr>`).join("")
+        }</tbody></table><p class="hint">Showing top ${show.length} of ${pairs.length}</p>`;
+      };
+
+      $("btn-export-csv").onclick = async () => {
+        const { songs } = await api(`/api/projects/${currentProjectId}`);
+        const header = ["artist","title","tempo","tempo_override","camelot","camelot_override","spotify_url","bpm_key_source"];
+        const lines = [header.join(",")].concat(songs.map((s) =>
+          header.map((h) => `"${String(s[h] ?? "").replaceAll('"', '""')}"`).join(",")
+        ));
+        const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "project_songs.csv";
+        a.click();
+      };
+
+      $("btn-enrich-xlsx").onclick = async () => {
+        const f = $("xlsx").files?.[0];
+        if (!f) return;
+        const st = $("xlsx-status");
+        st.hidden = false;
+        st.textContent = "Working…";
+        const body = new FormData();
+        body.append("file", f);
+        const res = await fetch("/api/enrich", { method: "POST", body });
+        if (!res.ok) { st.textContent = await res.text(); return; }
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "catalog_enriched.csv";
+        a.click();
+        st.textContent = "Done.";
+      };
+
+      const params = new URLSearchParams(location.search);
+      if (params.get("connected")) history.replaceState({}, "", "/");
+      if (params.get("auth_error")) $("auth-status").textContent = "Auth error: " + params.get("auth_error");
+
+      refreshAuth().catch((e) => { $("auth-status").textContent = "Error: " + e.message; });
     </script>
   </body>
 </html>

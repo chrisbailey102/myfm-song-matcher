@@ -1,25 +1,45 @@
 # MyFM Song Matcher
 
-Small **Node 20+** toolkit to speed up short mashup research: enrich an Excel song list with **Spotify key/BPM** (US market + “radio edit” heuristics), optionally cache **Genius** lyrics, then emit **harmonically compatible** pair candidates with **lyric bridge hints**.
+**Node 20+** web app + CLI for mashup research: import **Spotify playlists** (including private), enrich BPM/key, score harmonic + lyric pairs, and **override BPM/Camelot** in the UI.
 
 ## Prerequisites
 
-- [Spotify Developer](https://developer.spotify.com/dashboard) app — **Client ID** and **Client Secret** (Client Credentials flow; no user login).
-- Optional: [Genius API](https://genius.com/api-clients) access token for lyrics.
+- [Spotify Developer](https://developer.spotify.com/dashboard) app — Client ID + Secret, with **Redirect URI** set (see below).
+- **Postgres** — local via Docker, or Railway Postgres in production.
+- [GetSongBPM API key](https://getsongbpm.com/api) — BPM/key when Spotify blocks audio-features on new apps.
+- Optional: [Genius](https://genius.com/api-clients) for lyrics (CLI).
 
-## Setup
+## Quick start (local)
 
 ```bash
 cd myfm-song-matcher
 cp .env.example .env
-# Edit .env in THIS project folder (next to package.json), not only in your home directory.
-# Add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET from the Spotify Developer Dashboard.
-# Optional: GENIUS_ACCESS_TOKEN for lyrics.
+# Fill SPOTIFY_*, SESSION_SECRET, DATABASE_URL, GETSONGBPM_API_KEY
+docker compose up -d db
 npm install
-npm run build
+npm run dev
 ```
 
-Spotify credentials use the **Client Credentials** flow: in the Spotify app dashboard open your app → **Settings** → copy **Client ID** and **Client Secret** (not the redirect URI flow).
+Open **http://127.0.0.1:3847/** → **Connect Spotify** → paste a **private or public playlist URL** → **Import & enrich**.
+
+### Spotify Dashboard → Redirect URIs
+
+Add exactly (local):
+
+`http://127.0.0.1:3847/auth/spotify/callback`
+
+For Railway, also add your production URL (see Deploy section).
+
+### Required env vars
+
+| Variable | Purpose |
+|----------|---------|
+| `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | API + OAuth |
+| `SPOTIFY_REDIRECT_URI` | Must match Dashboard |
+| `APP_BASE_URL` | e.g. `http://127.0.0.1:3847` |
+| `SESSION_SECRET` | 32+ random chars for login cookies |
+| `DATABASE_URL` | `postgresql://myfm:myfm@localhost:5432/myfm` (with `docker compose up -d db`) |
+| `GETSONGBPM_API_KEY` | BPM/key fallback |
 
 ## Excel format
 
@@ -60,36 +80,29 @@ npm run myfm -- all -i ./my-catalog.xlsx
 | `MYFM_MAX_PAIRS` | `500000` | Safety cap on pair rows |
 | `MYFM_UI_PORT` | `3847` | Local review UI port |
 
-## Local app (pick Excel in the browser)
+## Web app features (Phase 1)
 
-From the project folder:
+- **Spotify OAuth** — read private playlists
+- **Playlist import** — URL or picker from your library
+- **Background enrich job** — BPM/key + metadata per track
+- **Manual overrides** — edit `tempo_override` / `camelot_override` per song (used for pairing)
+- **Pair candidates** — harmonic scores for the project catalog
+- **Legacy Excel upload** — collapsible section at bottom of page
 
-```bash
-npm run start:ui
-```
+## Deploy to Railway
 
-**Important:** `npm run build` only compiles TypeScript — it does **not** start the browser app. You must run **`npm run start:ui`** and **leave that terminal open**. Then open the URL it prints (usually below).
+1. Create a new Railway project from this repo.
+2. Add a **PostgreSQL** plugin; Railway sets `DATABASE_URL` automatically.
+3. Set variables: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SESSION_SECRET`, `GETSONGBPM_API_KEY`, `APP_BASE_URL` (your Railway URL), `SPOTIFY_REDIRECT_URI` (`{APP_BASE_URL}/auth/spotify/callback`).
+4. Add the same redirect URI in the Spotify Developer Dashboard.
+5. Deploy — `railway.toml` runs `node dist/server.js` after Docker build.
 
-After a build, you can instead run: **`npm run start:ui:dist`** (same UI, uses `dist/`).
-
-Open **http://127.0.0.1:3847/** — use **“Enrich from Excel”** to choose your `.xlsx` file and run Spotify enrichment in the browser. When it finishes you get a **download** of `catalog_enriched.csv`, and a copy is saved under **`out/catalog_enriched.csv`** so **Load catalog** works.
-
-Spotify credentials still come from the server’s **`.env`** or **`spotify-key.env`** (not from the browser). Large catalogs can take many minutes; the page waits up to **20 minutes** for one upload.
-
-## Local review UI (browse CSVs)
-
-Use **Load catalog** / **Load pairs** in the same page after those files exist under `out/`.
-
-Share **`out/*.csv`** (and optionally `out/lyrics/`) with a colleague via your normal internal channel; they only need Node + this repo + the same files.
-
-## Docker (optional)
+## Docker (app + Postgres)
 
 ```bash
 docker compose up --build
-# UI: http://127.0.0.1:3847/ — mount your ./out and .env as in docker-compose.yml
+# http://127.0.0.1:3847/
 ```
-
-Mount a host directory that contains `out/` and place `catalog.xlsx` then run CLI inside the container if desired.
 
 ## Data sources & compliance
 
@@ -104,7 +117,11 @@ Mount a host directory that contains `out/` and place `catalog.xlsx` then run CL
 - `src/lyrics.ts` — Genius fetch + lyric pair scoring  
 - `src/pairs.ts` — candidate generation + `pair_candidates.csv`  
 - `src/cli.ts` — Commander CLI  
-- `src/server.ts` + `public/` — minimal internal UI  
+- `src/spotifyAuth.ts` — OAuth + sessions  
+- `src/spotifyPlaylist.ts` — playlist import  
+- `src/db/` — Postgres schema + projects/songs/jobs  
+- `src/worker.ts` — background enrich jobs  
+- `src/server.ts` + `public/` — web UI  
 
 ## License
 

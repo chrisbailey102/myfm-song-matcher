@@ -1,10 +1,36 @@
 services:
-  myfm-ui:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: myfm
+      POSTGRES_PASSWORD: myfm
+      POSTGRES_DB: myfm
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myfm"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
     build: .
     ports:
       - "3847:3847"
     env_file:
       - .env
-    volumes:
-      # Host folder should contain catalog_enriched.csv + pair_candidates.csv (+ lyrics/)
-      - ./out:/app/out:ro
+      - spotify-key.env
+    environment:
+      DATABASE_URL: postgresql://myfm:myfm@db:5432/myfm
+      APP_BASE_URL: http://127.0.0.1:3847
+      SPOTIFY_REDIRECT_URI: http://127.0.0.1:3847/auth/spotify/callback
+      HOST: 0.0.0.0
+      MYFM_UI_PORT: "3847"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:

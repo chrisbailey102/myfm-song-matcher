@@ -31,6 +31,9 @@ export type EnrichedSong = CatalogRow & {
   lyrics_fetched_at?: string;
   /** spotify | getsongbpm — where BPM/key came from */
   bpm_key_source?: string;
+  /** Manual corrections (UI); used for pairing when set */
+  tempo_override?: number | null;
+  camelot_override?: string | null;
 };
 
 export type PairCandidate = {
