@@ -1,0 +1,10 @@
+services:
+  myfm-ui:
+    build: .
+    ports:
+      - "3847:3847"
+    env_file:
+      - .env
+    volumes:
+      # Host folder should contain catalog_enriched.csv + pair_candidates.csv (+ lyrics/)
+      - ./out:/app/out:ro

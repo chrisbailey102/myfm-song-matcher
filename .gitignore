@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+spotify-key.env
+*.csv
+out/
+.DS_Store
+# Local secrets and large outputs

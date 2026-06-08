@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MyFM Song Matcher</title>
+    <style>
+      :root {
+        font-family: system-ui, sans-serif;
+        color: #e8eaed;
+        background: #0f1115;
+      }
+      body {
+        margin: 0;
+        padding: 1rem 1.25rem 2rem;
+        max-width: 1400px;
+        margin-inline: auto;
+      }
+      h1 {
+        font-size: 1.25rem;
+        font-weight: 600;
+      }
+      h2 {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 1.25rem 0 0.5rem;
+        color: #bdc1c6;
+      }
+      p {
+        color: #9aa0a6;
+        max-width: 72ch;
+      }
+      .panel {
+        border: 1px solid #30343c;
+        border-radius: 8px;
+        padding: 1rem 1rem 1.1rem;
+        margin: 1rem 0;
+        background: #16191f;
+      }
+      nav {
+        display: flex;
+        gap: 0.5rem;
+        margin: 1rem 0;
+        flex-wrap: wrap;
+      }
+      button {
+        background: #1a73e8;
+        color: #fff;
+        border: 0;
+        padding: 0.45rem 0.85rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      button.secondary {
+        background: #30343c;
+        color: #e8eaed;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+      }
+      th,
+      td {
+        border: 1px solid #30343c;
+        padding: 0.35rem 0.5rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        background: #1f232b;
+        position: sticky;
+        top: 0;
+      }
+      .wrap {
+        overflow: auto;
+        max-height: 70vh;
+        border: 1px solid #30343c;
+        border-radius: 8px;
+      }
+      .meta {
+        font-size: 0.75rem;
+        color: #9aa0a6;
+        margin-bottom: 0.5rem;
+      }
+      .status {
+        font-size: 0.85rem;
+        color: #fdd663;
+        margin-top: 0.5rem;
+        white-space: pre-wrap;
+      }
+      input[type="search"] {
+        width: min(420px, 100%);
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        border: 1px solid #30343c;
+        background: #0f1115;
+        color: #e8eaed;
+      }
+      input[type="file"] {
+        max-width: 100%;
+        font-size: 0.85rem;
+        color: #bdc1c6;
+      }
+      code {
+        font-size: 0.85em;
+        background: #1f232b;
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>MyFM Song Matcher</h1>
+    <p>
+      Run <code>npm run start:ui</code> from the project folder (with <code>.env</code> containing
+      Spotify credentials). You can pick your Excel file here or keep using the CLI.
+    </p>
+
+    <div class="panel">
+      <h2>Enrich from Excel</h2>
+      <p style="margin-top: 0">
+        Choose your <code>.xlsx</code> (Artist + Title columns). This calls Spotify for each row;
+        large lists can take several minutes. When it finishes, your browser downloads
+        <code>catalog_enriched.csv</code> and a copy is saved under <code>out/</code> for the table
+        below.
+      </p>
+      <input type="file" id="xlsx" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+      <div style="margin-top: 0.65rem">
+        <button type="button" id="btn-enrich">Run Spotify enrich</button>
+      </div>
+      <div class="status" id="enrich-status" hidden></div>
+    </div>
+
+    <h2>Browse outputs</h2>
+    <nav>
+      <button type="button" id="btn-catalog">Load catalog</button>
+      <button type="button" id="btn-pairs" class="secondary">Load pairs</button>
+    </nav>
+    <label for="q">Filter rows</label>
+    <div style="margin: 0.35rem 0 0.75rem">
+      <input type="search" id="q" placeholder="Filter by any cell text…" />
+    </div>
+    <div class="meta" id="meta"></div>
+    <div class="wrap" id="table-host"></div>
+    <script>
+      const meta = document.getElementById("meta");
+      const host = document.getElementById("table-host");
+      const q = document.getElementById("q");
+      const enrichStatus = document.getElementById("enrich-status");
+      const btnEnrich = document.getElementById("btn-enrich");
+      const xlsxInput = document.getElementById("xlsx");
+
+      function esc(s) {
+        return String(s ?? "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+      }
+
+      function render(rows) {
+        if (!rows.length) {
+          host.innerHTML = "<p>No rows yet. Run enrich above or <code>myfm pairs</code> for pair CSV.</p>";
+          return;
+        }
+        const cols = Object.keys(rows[0]);
+        const filter = (q.value || "").toLowerCase();
+        const filtered = filter
+          ? rows.filter((r) =>
+              cols.some((c) => String(r[c] ?? "").toLowerCase().includes(filter)),
+            )
+          : rows;
+        meta.textContent = `Showing ${filtered.length} of ${rows.length} rows`;
+        const thead = `<tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr>`;
+        const tbody = filtered
+          .map(
+            (r) =>
+              `<tr>${cols.map((c) => `<td>${esc(r[c])}</td>`).join("")}</tr>`,
+          )
+          .join("");
+        host.innerHTML = `<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+      }
+
+      async function load(kind) {
+        meta.textContent = "Loading…";
+        const url = kind === "catalog" ? "/api/catalog" : "/api/pairs";
+        const res = await fetch(url);
+        const data = await res.json();
+        window.__rows = data.rows || [];
+        render(window.__rows);
+      }
+
+      document.getElementById("btn-catalog").onclick = () => load("catalog");
+      document.getElementById("btn-pairs").onclick = () => load("pairs");
+      q.addEventListener("input", () => render(window.__rows || []));
+
+      btnEnrich.onclick = async () => {
+        const f = xlsxInput.files?.[0];
+        if (!f) {
+          enrichStatus.hidden = false;
+          enrichStatus.textContent = "Choose a .xlsx file first.";
+          return;
+        }
+        enrichStatus.hidden = false;
+        enrichStatus.textContent =
+          "Working… this calls Spotify once per row. Leave this tab open.";
+        btnEnrich.disabled = true;
+        const ac = new AbortController();
+        const t = setTimeout(() => ac.abort(), 20 * 60 * 1000);
+        try {
+          const body = new FormData();
+          body.append("file", f, f.name);
+          const res = await fetch("/api/enrich", { method: "POST", body, signal: ac.signal });
+          clearTimeout(t);
+          const ct = res.headers.get("content-type") || "";
+          if (!res.ok) {
+            let msg = res.statusText;
+            try {
+              const j = await res.json();
+              if (j.error) msg = j.error;
+            } catch (_) {}
+            enrichStatus.textContent = "Error: " + msg;
+            return;
+          }
+          if (!ct.includes("csv")) {
+            enrichStatus.textContent = "Unexpected response (not CSV).";
+            return;
+          }
+          const blob = await res.blob();
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "catalog_enriched.csv";
+          a.click();
+          URL.revokeObjectURL(a.href);
+          enrichStatus.textContent =
+            "Done. CSV downloaded and saved to out/catalog_enriched.csv. You can click Load catalog.";
+        } catch (e) {
+          enrichStatus.textContent =
+            e.name === "AbortError"
+              ? "Timed out after 20 minutes. Try the CLI for very large catalogs."
+              : "Error: " + String(e.message || e);
+        } finally {
+          btnEnrich.disabled = false;
+        }
+      };
+    </script>
+  </body>
+</html>
