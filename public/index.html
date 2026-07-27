@@ -334,6 +334,27 @@
         box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
       }
       .panel.tight { padding: 0.95rem 1.15rem; }
+      #import-panel {
+        background: transparent;
+        border: 0;
+        box-shadow: none;
+        padding: 0.5rem 0 1rem;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+      }
+      #import-panel .import-card {
+        margin: 0;
+      }
+      #import-panel .import-card h2 {
+        margin: 0 0 0.35rem;
+        font-size: 1.15rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        text-transform: none;
+        color: var(--ink);
+      }
       button {
         background: var(--accent);
         color: #fff;
@@ -829,40 +850,39 @@
         </aside>
 
         <main class="main-pane">
-          <div id="import-panel" class="panel" hidden>
-            <h2 style="margin-top:0;text-transform:none;letter-spacing:0;font-size:1.2rem;color:var(--ink)">Import</h2>
-            <p class="hint">Paste a Spotify playlist URL or pick from your library. Spotify only returns tracks for playlists you <strong>own or collaborate on</strong>.</p>
-            <div class="row">
-              <label>Playlist URL</label>
-              <input type="url" id="playlist-url" placeholder="https://open.spotify.com/playlist/…" />
-            </div>
-            <div class="row">
-              <label>Or pick</label>
-              <select id="playlist-pick"><option value="">— load playlists —</option></select>
-              <button type="button" id="btn-load-playlists" class="secondary">Refresh my playlists</button>
-            </div>
-            <div class="row">
-              <label>Name</label>
-              <input type="text" id="project-name" placeholder="Optional — defaults to playlist name" />
-            </div>
-            <div class="row">
-              <label>Brief</label>
-              <textarea id="project-brief" placeholder="Era, energy, vibe (optional)"></textarea>
-            </div>
-            <div class="row">
-              <button type="button" id="btn-create-project">Import &amp; enrich</button>
-              <button type="button" id="btn-cancel-import" class="secondary">Cancel</button>
-            </div>
-            <div class="status" id="create-status" hidden></div>
+          <div id="import-panel" hidden>
+            <section class="panel import-card" aria-labelledby="import-spotify-heading">
+              <h2 id="import-spotify-heading">Spotify Import</h2>
+              <p class="hint" style="margin-top:0">Paste a playlist URL or pick from your library. Spotify only returns tracks for playlists you <strong>own or collaborate on</strong>. Adds to My Collection and Entire Library.</p>
+              <div class="row">
+                <label>Playlist URL</label>
+                <input type="url" id="playlist-url" placeholder="https://open.spotify.com/playlist/…" />
+              </div>
+              <div class="row">
+                <label>Or pick</label>
+                <select id="playlist-pick"><option value="">Loading playlists…</option></select>
+                <button type="button" id="btn-load-playlists" class="secondary">Refresh</button>
+              </div>
+              <div class="row">
+                <label>Name</label>
+                <input type="text" id="project-name" placeholder="Optional — defaults to playlist name" />
+              </div>
+              <div class="row">
+                <button type="button" id="btn-create-project">Import &amp; enrich</button>
+                <button type="button" id="btn-cancel-import" class="secondary">Cancel</button>
+              </div>
+              <div class="status" id="create-status" hidden></div>
+            </section>
 
-            <hr style="border:none;border-top:1px solid var(--line);margin:1.25rem 0" />
-            <h3 style="margin:0 0 0.35rem;font-size:0.95rem;font-weight:600;color:var(--ink)">Excel upload</h3>
-            <p class="hint" style="margin-top:0">Legacy catalog enrich — upload a spreadsheet, get BPM/key CSV back. Does not add to your collection.</p>
-            <div class="row">
-              <input type="file" id="xlsx" accept=".xlsx" />
-              <button type="button" id="btn-enrich-xlsx" class="secondary">Run enrich</button>
-            </div>
-            <div class="status" id="xlsx-status" hidden></div>
+            <section class="panel import-card" aria-labelledby="import-excel-heading">
+              <h2 id="import-excel-heading">Excel Upload</h2>
+              <p class="hint" style="margin-top:0">Upload a spreadsheet to enrich BPM/key and download a CSV. Does not add tracks to My Collection.</p>
+              <div class="row">
+                <input type="file" id="xlsx" accept=".xlsx" />
+                <button type="button" id="btn-enrich-xlsx" class="secondary">Run enrich</button>
+              </div>
+              <div class="status" id="xlsx-status" hidden></div>
+            </section>
           </div>
 
           <div id="settings-panel" class="panel" hidden>
@@ -1448,6 +1468,7 @@
         $("settings-panel").hidden = true;
         $("empty-state").hidden = true;
         $("project-detail").hidden = true;
+        void loadSpotifyPlaylists();
       };
       $("btn-cancel-import").onclick = () => {
         $("import-panel").hidden = true;
@@ -1506,12 +1527,30 @@
         }
       };
 
-      $("btn-load-playlists").onclick = async () => {
-        const { playlists } = await api("/api/spotify/playlists");
+      async function loadSpotifyPlaylists() {
         const sel = $("playlist-pick");
-        sel.innerHTML = '<option value="">— select —</option>' +
-          playlists.map((p) => `<option value="${esc(p.id)}" data-url="${esc(p.url)}">${esc(p.name)} (${p.track_count})</option>`).join("");
-      };
+        const btn = $("btn-load-playlists");
+        const prev = sel.value;
+        sel.innerHTML = '<option value="">Loading playlists…</option>';
+        btn.disabled = true;
+        try {
+          const { playlists } = await api("/api/spotify/playlists");
+          if (!playlists?.length) {
+            sel.innerHTML = '<option value="">No playlists found</option>';
+            return;
+          }
+          sel.innerHTML = '<option value="">— select —</option>' +
+            playlists.map((p) => `<option value="${esc(p.id)}" data-url="${esc(p.url)}">${esc(p.name)} (${p.track_count})</option>`).join("");
+          if (prev && [...sel.options].some((o) => o.value === prev)) sel.value = prev;
+        } catch (e) {
+          sel.innerHTML = `<option value="">Couldn’t load playlists</option>`;
+          console.error(e);
+        } finally {
+          btn.disabled = false;
+        }
+      }
+
+      $("btn-load-playlists").onclick = () => { void loadSpotifyPlaylists(); };
 
       $("playlist-pick").onchange = () => {
         const opt = $("playlist-pick").selectedOptions[0];
@@ -1527,7 +1566,6 @@
           const playlistId = $("playlist-pick").value;
           const body = {
             name: $("project-name").value.trim(),
-            brief: $("project-brief").value.trim(),
             playlistUrl: playlistUrl || undefined,
             playlistId: playlistId || undefined,
           };
