@@ -3,159 +3,1167 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>MyFM Song Matcher</title>
+    <title>Song Matcher</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
     <style>
       :root {
-        font-family: system-ui, sans-serif;
-        color: #e8eaed;
-        background: #0f1115;
+        --bg: #f4f5f7;
+        --surface: #ffffff;
+        --ink: #1a1a1a;
+        --muted: #6b7280;
+        --line: #e6e8ec;
+        --line-soft: #f0f1f3;
+        --accent: #111111;
+        --play: #1ed760;
+        --danger: #c62828;
+        --font: "DM Sans", "Avenir Next", "Segoe UI", sans-serif;
+        --sidebar-w: 340px;
+        --topbar-h: 58px;
+        color: var(--ink);
+        background: var(--bg);
+        font-family: var(--font);
+        font-size: 17px;
+        line-height: 1.45;
       }
-      body {
+      * { box-sizing: border-box; }
+      html, body {
         margin: 0;
-        padding: 1rem 1.25rem 2rem;
-        max-width: 1500px;
-        margin-inline: auto;
+        padding: 0;
+        width: 100%;
+        max-width: none;
+        background: var(--bg);
+        color: var(--ink);
+        min-height: 100vh;
       }
-      h1 { font-size: 1.25rem; font-weight: 600; }
-      h2 { font-size: 1rem; color: #bdc1c6; margin: 1rem 0 0.5rem; }
-      p, .hint { color: #9aa0a6; max-width: 72ch; font-size: 0.9rem; }
-      .panel {
-        border: 1px solid #30343c;
-        border-radius: 8px;
+      .app-top {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 200;
+        height: var(--topbar-h);
+        padding: 0 1.5rem;
+        border-bottom: 1px solid var(--line);
+        background: #fff;
+        display: flex;
+        gap: 0.85rem;
+        align-items: center;
+        flex-wrap: nowrap;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .app-top h1 {
+        font-size: 1.25rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin: 0;
+        margin-right: auto;
+        white-space: nowrap;
+      }
+      #auth-status { font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .app-shell {
+        display: grid;
+        grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+        width: 100%;
+        min-height: 100vh;
+        padding-top: var(--topbar-h);
+        box-sizing: border-box;
+      }
+      @media (max-width: 900px) {
+        .app-shell { grid-template-columns: 1fr; }
+        .sidebar { border-right: 0; border-bottom: 1px solid var(--line); max-height: 48vh; }
+      }
+      .sidebar {
+        background: #eef1f5;
+        border-right: 1px solid var(--line);
+        padding: 0.75rem 0.75rem 1.5rem;
+        overflow: auto;
+        height: calc(100vh - var(--topbar-h));
+        position: sticky;
+        top: var(--topbar-h);
+        display: flex;
+        flex-direction: column;
+      }
+      .pl-list { display: flex; flex-direction: column; gap: 0.2rem; flex: 1; min-height: 0; }
+      .sidebar-foot {
+        margin-top: 1rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--line);
+      }
+      .danger-zone {
+        margin-top: 0.5rem;
         padding: 1rem;
-        margin: 1rem 0;
-        background: #16191f;
+        border: 1px solid #f0c4c4;
+        border-radius: 10px;
+        background: #fff8f8;
       }
+      button.danger-btn {
+        background: #c0392b;
+        color: #fff;
+      }
+      button.danger-btn:hover:not(:disabled) { background: #a93226; }
+      .sidebar-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.4rem 0.5rem 0.9rem;
+      }
+      .sidebar-head h2 {
+        margin: 0;
+        font-size: 1.05rem;
+        letter-spacing: 0;
+        color: var(--ink);
+        text-transform: none;
+        font-weight: 700;
+      }
+      .btn-add {
+        width: 2.15rem;
+        height: 2.15rem;
+        padding: 0;
+        border-radius: 7px;
+        background: #2f80ed;
+        color: #fff;
+        font-size: 1.35rem;
+        line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .pl-item {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.4rem;
+        align-items: center;
+        padding: 0.7rem 0.65rem;
+        border-radius: 9px;
+        cursor: pointer;
+        border: 0;
+        background: transparent;
+        color: var(--ink);
+        font: inherit;
+        text-align: left;
+        width: 100%;
+      }
+      .pl-item:hover { background: rgba(255,255,255,0.55); }
+      .pl-item.active { background: rgba(255,255,255,0.95); box-shadow: 0 0 0 1px var(--line); }
+      .pl-item .pl-name {
+        font-size: 1rem;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .pl-count {
+        min-width: 1.85rem;
+        padding: 0.18rem 0.45rem;
+        background: #fff;
+        border: 1px solid #d5d9e0;
+        border-radius: 5px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: #444;
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+      }
+      .ctx-menu {
+        position: fixed;
+        z-index: 1000;
+        min-width: 10rem;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+        padding: 0.35rem;
+        display: none;
+      }
+      .ctx-menu.open { display: block; }
+      .ctx-menu button {
+        display: block;
+        width: 100%;
+        text-align: left;
+        background: transparent;
+        color: var(--ink);
+        border: 0;
+        border-radius: 7px;
+        padding: 0.55rem 0.75rem;
+        font-size: 0.95rem;
+        font-weight: 500;
+      }
+      .ctx-menu button:hover { background: #f3f4f6; }
+      .ctx-menu button.danger { color: var(--danger); }
+      .ctx-menu button.danger:hover { background: #fef2f2; }
+      .main-pane {
+        padding: 0.85rem 1.25rem 1rem;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: none;
+        height: calc(100vh - var(--topbar-h));
+        box-sizing: border-box;
+      }
+      #project-detail {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      #tab-tracks,
+      #tab-pairs {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      #tab-tracks[hidden],
+      #tab-pairs[hidden] {
+        display: none !important;
+      }
+      #import-panel,
+      #settings-panel,
+      #empty-state {
+        overflow: auto;
+        flex: 1;
+        min-height: 0;
+      }
+      .detail-bar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.55rem;
+        flex-shrink: 0;
+      }
+      .detail-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        justify-content: flex-end;
+      }
+      .detail-title-row {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 0.45rem 0.65rem;
+      }
+      .detail-bar h2 {
+        margin: 0;
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 1.25rem;
+        color: var(--ink);
+      }
+      .detail-count {
+        font-size: 0.95rem;
+        font-weight: 400;
+        color: var(--muted, #6b7280);
+      }
+      .detail-bar .hint {
+        margin: 0.2rem 0 0;
+        font-size: 0.9rem;
+      }
+      .tabs {
+        display: flex;
+        gap: 0.25rem;
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 0.75rem;
+        flex-shrink: 0;
+      }
+      .tabs button {
+        background: transparent;
+        color: var(--muted);
+        border: 0;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        padding: 0.55rem 0.9rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin-bottom: -1px;
+      }
+      .tabs button:hover { color: var(--ink); }
+      .tabs button.active {
+        color: var(--ink);
+        border-bottom-color: var(--ink);
+      }
+      .tabs button:disabled { opacity: 0.35; }
+      .sidebar .camelot-panel {
+        width: 100%;
+        margin-bottom: 0.85rem;
+        padding: 0.55rem 0.4rem 0.5rem;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.3rem;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+      }
+      .sidebar .camelot-panel .wheel-label {
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .sidebar #camelot-wheel svg {
+        width: 280px;
+        height: 280px;
+        display: block;
+      }
+      #import-panel[hidden],
+      #settings-panel[hidden],
+      #main-app[hidden],
+      #project-detail[hidden] { display: none !important; }
+      h2 {
+        font-size: 0.85rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin: 1.35rem 0 0.75rem;
+      }
+      p, .hint { color: var(--muted); max-width: none; font-size: 1rem; line-height: 1.5; }
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 1.15rem 1.25rem;
+        margin: 0.9rem 0;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+      }
+      .panel.tight { padding: 0.95rem 1.15rem; }
       button {
-        background: #1a73e8;
+        background: var(--accent);
         color: #fff;
         border: 0;
-        padding: 0.45rem 0.85rem;
-        border-radius: 6px;
+        padding: 0.55rem 1.05rem;
+        border-radius: 999px;
         cursor: pointer;
-        font-size: 0.9rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        font-family: inherit;
       }
-      button.secondary { background: #30343c; color: #e8eaed; }
-      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      button.secondary {
+        background: #fff;
+        color: var(--ink);
+        border: 1px solid var(--line);
+      }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
       input, select, textarea {
-        background: #0f1115;
-        border: 1px solid #30343c;
-        color: #e8eaed;
-        border-radius: 6px;
-        padding: 0.4rem 0.55rem;
-        font-size: 0.9rem;
+        background: #fff;
+        border: 1px solid var(--line);
+        color: var(--ink);
+        border-radius: 8px;
+        padding: 0.55rem 0.7rem;
+        font-size: 1rem;
+        font-family: inherit;
       }
-      input[type="text"], input[type="url"], select { width: min(480px, 100%); }
-      textarea { width: 100%; min-height: 3rem; }
-      table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
-      th, td { border: 1px solid #30343c; padding: 0.3rem 0.45rem; text-align: left; vertical-align: top; }
-      th { background: #1f232b; position: sticky; top: 0; }
-      .wrap { overflow: auto; max-height: 65vh; border: 1px solid #30343c; border-radius: 8px; }
-      .row { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; margin: 0.4rem 0; }
-      .status { color: #fdd663; font-size: 0.85rem; margin-top: 0.5rem; }
-      .badge { display: inline-block; padding: 0.1rem 0.45rem; border-radius: 4px; font-size: 0.75rem; background: #30343c; }
-      .override input { width: 4.5rem; }
-      code { background: #1f232b; padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.85em; }
-      #auth-bar { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+      input[type="text"], input[type="url"], select { width: min(560px, 100%); }
+      textarea { width: 100%; min-height: 3.5rem; }
+      label { font-size: 0.9rem; color: var(--muted); font-weight: 600; }
+
+      /* Mixed In Key–style track table */
+      /* (height set later via .mik-wrap near track-head) */
+      table.mik {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 1.05rem;
+      }
+      table.mik th,
+      table.mik td {
+        border: 0;
+        border-bottom: 1px solid var(--line-soft);
+        padding: 0.9rem 1rem;
+        vertical-align: middle;
+        text-align: left;
+      }
+      table.mik thead th {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        background: #fff;
+        color: var(--muted);
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        cursor: pointer;
+        user-select: none;
+        white-space: nowrap;
+        border-bottom: 1px solid var(--line);
+      }
+      table.mik thead th:hover { color: var(--ink); }
+      table.mik thead th.sorted-asc::after,
+      table.mik thead th.sorted-desc::after {
+        font-size: 0.75em;
+        margin-left: 0.3rem;
+        color: var(--ink);
+      }
+      table.mik thead th.sorted-asc::after { content: "▴"; }
+      table.mik thead th.sorted-desc::after { content: "▾"; }
+      table.mik tbody tr:hover { background: #fafbfc; }
+      table.mik td.artist,
+      table.mik td.title {
+        font-weight: 600;
+        color: var(--ink);
+        font-size: 1.05rem;
+      }
+      table.mik td.artist.unknown { color: var(--muted); font-weight: 500; }
+      table.mik td.num {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        color: #333;
+        width: 5.5rem;
+        font-size: 1.05rem;
+      }
+      table.mik td.key {
+        text-align: center;
+        width: 7.5rem;
+      }
+      table.mik td.energy {
+        text-align: center;
+        width: 5.5rem;
+        font-variant-numeric: tabular-nums;
+        font-weight: 600;
+        font-size: 1.05rem;
+      }
+      table.mik td.play-cell { width: 3rem; padding-right: 0.25rem; }
+      .key-badge {
+        display: inline-block;
+        min-width: 3rem;
+        padding: 0.3rem 0.65rem;
+        border-radius: 7px;
+        font-weight: 700;
+        font-size: 0.95rem;
+        letter-spacing: 0.02em;
+        text-align: center;
+        color: #111;
+      }
+      .editable { cursor: text; border-radius: 4px; }
+      .editable:hover { outline: 1px dashed #c5c9d0; }
+      .editable.editing { outline: none; }
+      .editable input {
+        width: 4.8rem;
+        padding: 0.25rem 0.4rem;
+        text-align: inherit;
+        font-size: 1.05rem;
+      }
+
+      .row { display: flex; gap: 0.65rem; flex-wrap: wrap; align-items: center; margin: 0.55rem 0; }
+      .status { color: #9a6b00; font-size: 0.95rem; margin-top: 0.45rem; }
+      .badge {
+        display: inline-block;
+        padding: 0.18rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        background: #eef0f3;
+        color: #555;
+      }
+      button.play {
+        background: var(--play);
+        color: #041;
+        padding: 0.35rem 0.6rem;
+        font-size: 0.85rem;
+        min-width: 2.1rem;
+        border-radius: 999px;
+        line-height: 1;
+      }
+      button.play.tiny { padding: 0.25rem 0.5rem; font-size: 0.8rem; min-width: auto; }
+      #play-status { min-height: 1.2em; color: var(--muted); font-size: 0.95rem; }
+      .play-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0 0 0.5rem;
+      }
+      .play-bar[hidden] { display: none !important; }
+      #btn-stop-play {
+        min-width: auto;
+        padding: 0.3rem 0.75rem;
+        font-size: 0.85rem;
+      }
+      button.play.is-playing {
+        background: #1a1a1a;
+        color: #fff;
+      }
+      code { background: #eef0f3; padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.9em; }
+      .track-head {
+        display: flex;
+        gap: 0.75rem;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-bottom: 0.55rem;
+        width: 100%;
+        flex-shrink: 0;
+      }
+      .mik-wrap {
+        overflow: auto;
+        flex: 1;
+        min-height: 0;
+        max-height: none;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        width: 100%;
+      }
+      .pair-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        padding: 0.75rem;
+      }
+      .pair-card {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #f7f8fa;
+        overflow: hidden;
+      }
+      .pair-card:nth-child(even) {
+        background: #eef3f9;
+      }
+      .pair-song {
+        display: grid;
+        grid-template-columns: 2.5rem minmax(0, 1fr) 4.5rem 4.5rem;
+        gap: 0.65rem;
+        align-items: center;
+        padding: 0.7rem 0.85rem;
+        background: #fff;
+        border-bottom: 1px solid var(--line-soft);
+      }
+      .pair-song .lane {
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        text-align: center;
+      }
+      .pair-song .who {
+        min-width: 0;
+      }
+      .pair-song .who .artist {
+        font-weight: 600;
+        color: var(--ink);
+        font-size: 1rem;
+      }
+      .pair-song .who .title {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin-top: 0.1rem;
+      }
+      .pair-song .bpm {
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        font-size: 1.05rem;
+        color: var(--ink);
+      }
+      .pair-song .bpm span {
+        display: block;
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+      .pair-song .key-cell {
+        text-align: center;
+      }
+      .pair-bridge {
+        padding: 0.35rem 0.85rem 0.55rem;
+        border: 0;
+      }
+      .pair-bridge > summary {
+        list-style: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--muted);
+        padding: 0.4rem 0;
+        user-select: none;
+      }
+      .pair-bridge > summary::-webkit-details-marker { display: none; }
+      .pair-bridge > summary::before {
+        content: "▸";
+        font-size: 0.85rem;
+        line-height: 1;
+        color: var(--muted);
+      }
+      .pair-bridge[open] > summary::before { content: "▾"; }
+      .pair-bridge .bridge-count {
+        font-weight: 600;
+        letter-spacing: 0;
+        text-transform: none;
+        color: #888;
+      }
+      .pair-bridge .bridge-bits {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+        padding-bottom: 0.25rem;
+      }
+      .bridge-item {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.45rem 0.55rem;
+        padding: 0.55rem 0.7rem;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      .bridge-item .phrase {
+        flex: 1 1 8rem;
+        color: var(--ink);
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+      .bridge-item .bridge-tag {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--muted);
+        letter-spacing: 0.02em;
+      }
+      .bridge-item.untimed {
+        background: #f3f4f6;
+      }
+      .pair-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem 1rem;
+        padding: 0.45rem 0.85rem 0.7rem;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .pair-meta strong {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .pair-sort-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        align-items: center;
+        padding: 0.65rem 0.75rem 0;
+      }
+      .pair-sort-bar span {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-right: 0.25rem;
+      }
+      .pair-sort-bar button {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 0.25rem 0.65rem;
+        font-size: 0.8rem;
+        font-weight: 600;
+      }
+      .pair-sort-bar button.active {
+        background: var(--ink);
+        color: #fff;
+        border-color: var(--ink);
+      }
+      #camelot-wheel path.key-seg {
+        cursor: pointer;
+        stroke: #fff;
+        stroke-width: 1.5;
+        transition: opacity 0.12s ease, filter 0.12s ease;
+      }
+      #camelot-wheel path.key-seg:hover { filter: brightness(1.06); }
+      #camelot-wheel path.key-seg.dim { opacity: 0.28; }
+      #camelot-wheel path.key-seg.selected {
+        opacity: 1;
+        stroke: #111;
+        stroke-width: 2.5;
+        filter: drop-shadow(0 1px 2px rgba(0,0,0,0.18));
+      }
+      #camelot-wheel text {
+        pointer-events: none;
+        font-family: var(--font);
+        font-weight: 700;
+        fill: #1a1a1a;
+        user-select: none;
+      }
+      #key-filter-status {
+        font-size: 0.9rem;
+        color: var(--muted);
+        min-height: 1.2em;
+        text-align: center;
+      }
+      .lyric-hit { border-top: 1px solid var(--line-soft); padding: 0.65rem 0; }
+      .lyric-hit .snip { color: #555; font-size: 0.95rem; margin-top: 0.25rem; }
+      .toolbar-hint { font-size: 0.95rem; color: var(--muted); margin: 0.3rem 0 0.7rem; }
+      details.panel summary { cursor: pointer; font-weight: 600; font-size: 1rem; }
+      .filters {
+        background: #fafbfc;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 1rem 1.15rem;
+        margin-top: 0.85rem;
+        flex-shrink: 0;
+      }
+      .filters h2 { margin-top: 0; }
+      table.plain {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 1rem;
+      }
+      table.plain th, table.plain td {
+        border-bottom: 1px solid var(--line-soft);
+        padding: 0.7rem 0.8rem;
+        text-align: left;
+      }
+      table.plain th {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+      }
+      .site-gate {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2rem 1.25rem;
+        background:
+          radial-gradient(ellipse 80% 50% at 50% -10%, #e8eef8 0%, transparent 55%),
+          var(--bg);
+      }
+      .site-gate[hidden] { display: none !important; }
+      .site-gate-card {
+        width: min(400px, 100%);
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 1.75rem 1.5rem;
+        box-shadow: 0 8px 30px rgba(16, 24, 40, 0.06);
+      }
+      .site-gate-card h1 {
+        margin: 0 0 0.35rem;
+        font-size: 1.45rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        text-transform: none;
+        color: var(--ink);
+      }
+      .site-gate-card p {
+        margin: 0 0 1.25rem;
+        font-size: 0.95rem;
+      }
+      .site-gate-card label {
+        display: block;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--muted);
+        margin-bottom: 0.35rem;
+      }
+      .site-gate-card input[type="password"] {
+        width: 100%;
+        box-sizing: border-box;
+        margin-bottom: 0.85rem;
+      }
+      .site-gate-card .site-gate-error {
+        color: var(--danger);
+        font-size: 0.9rem;
+        margin: 0 0 0.75rem;
+        min-height: 1.2em;
+      }
+      #spotify-app[hidden] { display: none !important; }
     </style>
   </head>
   <body>
-    <h1>MyFM Song Matcher</h1>
-    <div id="auth-bar" class="panel">
-      <span id="auth-status">Checking login…</span>
+    <div id="site-gate" class="site-gate">
+      <form class="site-gate-card" id="site-gate-form">
+        <h1>Song Matcher</h1>
+        <p class="hint">Enter the On The Sly site password. If you’re already signed in on dashboard.onthesly.com, refresh — this should unlock automatically.</p>
+        <label for="site-password">Password</label>
+        <input type="text" name="username" value="onthesly" autocomplete="username" hidden aria-hidden="true" tabindex="-1" />
+        <input type="password" id="site-password" name="password" autocomplete="current-password" required autofocus />
+        <p class="site-gate-error" id="site-gate-error"></p>
+        <button type="submit" id="site-gate-submit">Continue</button>
+      </form>
+    </div>
+
+    <div id="spotify-app" hidden>
+    <div class="app-top">
+      <h1>Song Matcher</h1>
+      <span id="auth-status" class="hint" style="margin:0">Checking login…</span>
       <button type="button" id="btn-login" hidden>Connect Spotify</button>
-      <button type="button" id="btn-logout" class="secondary" hidden>Log out</button>
+      <button type="button" id="btn-reauth" class="secondary" hidden title="Grant playback permissions">Reconnect Spotify</button>
+      <button type="button" id="btn-logout" class="secondary" hidden>Log out Spotify</button>
     </div>
 
     <div id="main-app" hidden>
-      <div class="panel">
-        <h2 style="margin-top:0">New project from playlist</h2>
-        <p class="hint">Private playlists work after Spotify login. Paste a URL or pick from your library.</p>
-        <div class="row">
-          <label>Playlist URL</label>
-          <input type="url" id="playlist-url" placeholder="https://open.spotify.com/playlist/…" />
-        </div>
-        <div class="row">
-          <label>Or pick</label>
-          <select id="playlist-pick"><option value="">— load playlists —</option></select>
-          <button type="button" id="btn-load-playlists" class="secondary">Refresh my playlists</button>
-        </div>
-        <div class="row">
-          <label>Project name</label>
-          <input type="text" id="project-name" placeholder="Optional — defaults to playlist name" />
-        </div>
-        <div class="row">
-          <label>Brief</label>
-          <textarea id="project-brief" placeholder="Era, energy, vibe (optional)"></textarea>
-        </div>
-        <button type="button" id="btn-create-project">Import &amp; enrich</button>
-        <div class="status" id="create-status" hidden></div>
-      </div>
-
-      <div class="panel">
-        <h2 style="margin-top:0">Projects</h2>
-        <div class="row">
-          <button type="button" id="btn-refresh-projects" class="secondary">Refresh</button>
-        </div>
-        <div id="project-list"></div>
-      </div>
-
-      <div id="project-detail" hidden>
-        <div class="panel">
-          <h2 style="margin-top:0" id="detail-title"></h2>
-          <p class="hint" id="detail-meta"></p>
-          <div class="status" id="job-status"></div>
-          <div class="row">
-            <button type="button" id="btn-load-pairs">Show pair candidates</button>
-            <button type="button" id="btn-export-csv" class="secondary">Download songs CSV</button>
+      <div class="app-shell">
+        <aside class="sidebar">
+          <div class="camelot-panel">
+            <div class="wheel-label">Camelot filter</div>
+            <div id="camelot-wheel" aria-label="Camelot wheel key filter"></div>
+            <div id="key-filter-status">Click a key to filter</div>
+            <button type="button" id="btn-clear-key" class="secondary" style="font-size:0.75rem;padding:0.3rem 0.7rem">All keys</button>
           </div>
-          <div class="panel" style="margin-top:0.75rem;background:#12151a">
-            <h2 style="margin-top:0">Pair filters</h2>
+          <div class="sidebar-head">
+            <h2>My Collection</h2>
+            <button type="button" class="btn-add" id="btn-new-playlist" title="Import">+</button>
+          </div>
+          <div class="pl-list" id="playlist-sidebar">
+            <button type="button" class="pl-item" id="btn-entire-library" data-view="library">
+              <span class="pl-name">Entire Library</span>
+              <span class="pl-count" id="library-count">0</span>
+            </button>
+          </div>
+          <div class="sidebar-foot">
+            <button type="button" class="secondary" id="btn-open-settings" style="width:100%;font-size:0.85rem">Settings</button>
+          </div>
+        </aside>
+
+        <main class="main-pane">
+          <div id="import-panel" class="panel" hidden>
+            <h2 style="margin-top:0;text-transform:none;letter-spacing:0;font-size:1.2rem;color:var(--ink)">Import</h2>
+            <p class="hint">Paste a Spotify playlist URL or pick from your library. Spotify only returns tracks for playlists you <strong>own or collaborate on</strong>.</p>
             <div class="row">
-              <label>Scope</label>
-              <select id="pair-mode">
-                <option value="playlist">Playlist only</option>
-                <option value="expand">Expand to library</option>
-              </select>
-              <label>BPM ±</label>
-              <input type="number" id="flt-bpm" value="10" style="width:4rem" />
-              <label>Min lyric</label>
-              <input type="number" id="flt-lyric" value="0" step="0.1" min="0" max="1" style="width:4rem" />
-              <label>Min harmonic</label>
-              <input type="number" id="flt-harm" value="0" step="0.1" min="0" max="1" style="width:4rem" />
+              <label>Playlist URL</label>
+              <input type="url" id="playlist-url" placeholder="https://open.spotify.com/playlist/…" />
             </div>
             <div class="row">
-              <label>Camelot</label>
-              <input type="text" id="flt-camelot" placeholder="e.g. 8B" style="width:4rem" />
-              <label>Year</label>
-              <input type="number" id="flt-year-min" placeholder="from" style="width:5rem" />
-              <input type="number" id="flt-year-max" placeholder="to" style="width:5rem" />
-              <label><input type="checkbox" id="flt-bridge" /> Require lyric bridge</label>
+              <label>Or pick</label>
+              <select id="playlist-pick"><option value="">— load playlists —</option></select>
+              <button type="button" id="btn-load-playlists" class="secondary">Refresh my playlists</button>
             </div>
-            <p class="hint">Library mode matches this playlist’s songs against tracks remembered from past projects.</p>
+            <div class="row">
+              <label>Name</label>
+              <input type="text" id="project-name" placeholder="Optional — defaults to playlist name" />
+            </div>
+            <div class="row">
+              <label>Brief</label>
+              <textarea id="project-brief" placeholder="Era, energy, vibe (optional)"></textarea>
+            </div>
+            <div class="row">
+              <button type="button" id="btn-create-project">Import &amp; enrich</button>
+              <button type="button" id="btn-cancel-import" class="secondary">Cancel</button>
+            </div>
+            <div class="status" id="create-status" hidden></div>
+
+            <hr style="border:none;border-top:1px solid var(--line);margin:1.25rem 0" />
+            <h3 style="margin:0 0 0.35rem;font-size:0.95rem;font-weight:600;color:var(--ink)">Excel upload</h3>
+            <p class="hint" style="margin-top:0">Legacy catalog enrich — upload a spreadsheet, get BPM/key CSV back. Does not add to your collection.</p>
+            <div class="row">
+              <input type="file" id="xlsx" accept=".xlsx" />
+              <button type="button" id="btn-enrich-xlsx" class="secondary">Run enrich</button>
+            </div>
+            <div class="status" id="xlsx-status" hidden></div>
           </div>
-        </div>
-        <h2>Songs <span class="hint">(edit BPM / Camelot overrides — saved automatically)</span></h2>
-        <div class="wrap" id="songs-table"></div>
-        <h2>Pair candidates</h2>
-        <div class="wrap" id="pairs-table"></div>
+
+          <div id="settings-panel" class="panel" hidden>
+            <h2 style="margin-top:0;text-transform:none;letter-spacing:0;font-size:1.2rem;color:var(--ink)">Settings</h2>
+            <p class="hint">Manage local Song Matcher data stored in the database. This does not affect Spotify playlists or the On The Sly dashboard.</p>
+
+            <div class="danger-zone">
+              <h3 style="margin:0 0 0.35rem;font-size:0.95rem;font-weight:600;color:var(--danger)">Reset catalog data</h3>
+              <p class="hint" style="margin-top:0">Deletes all imported playlists, Entire Library tracks, lyrics cache, and background jobs. Your Spotify login stays signed in.</p>
+              <p class="hint">Type <strong>DELETE ALL</strong> to confirm, then click the button.</p>
+              <div class="row">
+                <input type="text" id="reset-confirm" placeholder="DELETE ALL" autocomplete="off" style="max-width:14rem" />
+                <button type="button" id="btn-reset-data" class="danger-btn" disabled>Delete all playlists &amp; song data</button>
+                <button type="button" id="btn-close-settings" class="secondary">Close</button>
+              </div>
+              <div class="status" id="reset-status" hidden></div>
+            </div>
+          </div>
+
+          <div id="empty-state" class="panel">
+            <p class="hint" style="margin:0">Select <strong>Entire Library</strong> or a playlist on the left — or click <strong>+</strong> to import.</p>
+          </div>
+
+          <div id="project-detail" hidden>
+            <div class="detail-bar">
+              <div>
+                <div class="detail-title-row">
+                  <h2 id="detail-title"></h2>
+                  <span id="detail-count" class="detail-count"></span>
+                </div>
+                <p class="hint" id="detail-meta" hidden></p>
+                <div class="status" id="job-status" style="margin:0.15rem 0 0"></div>
+              </div>
+              <div class="detail-actions">
+                <button type="button" id="btn-backfill-meta" class="secondary" hidden>Fill missing BPM/key</button>
+                <button type="button" id="btn-export-csv" class="secondary">Download CSV</button>
+              </div>
+            </div>
+
+            <div class="tabs" id="main-tabs">
+              <button type="button" class="active" data-tab="tracks" id="tab-btn-tracks">Tracks</button>
+              <button type="button" data-tab="pairs" id="tab-btn-pairs">Pair candidates</button>
+            </div>
+
+            <div id="tab-tracks">
+              <div class="track-head">
+                <input type="text" id="lyric-q" placeholder="Search lyrics…" style="width:min(280px,100%)" />
+                <button type="button" id="btn-lyric-search" class="secondary">Search</button>
+                <span class="hint" style="margin:0">Double-click tempo/key to edit · ▶ controls your Spotify app</span>
+              </div>
+              <div id="lyric-results" class="hint"></div>
+              <p class="status" id="play-status" style="margin:0.25rem 0 0.5rem"></p>
+              <div class="play-bar" id="play-bar" hidden>
+                <button type="button" id="btn-stop-play" class="secondary">Stop</button>
+              </div>
+              <audio id="preview-audio" preload="none"></audio>
+              <div class="mik-wrap" id="songs-table"></div>
+            </div>
+
+            <div id="tab-pairs" hidden>
+              <div class="filters" id="pair-filters">
+                <div class="row">
+                  <label>Scope</label>
+                  <select id="pair-mode">
+                    <option value="playlist">Playlist only</option>
+                    <option value="expand">Expand to library</option>
+                  </select>
+                  <label>BPM ±</label>
+                  <input type="number" id="flt-bpm" value="10" style="width:4rem" />
+                  <label>Min lyric</label>
+                  <input type="number" id="flt-lyric" value="0" step="0.1" min="0" max="1" style="width:4rem" />
+                  <label>Min harmonic</label>
+                  <input type="number" id="flt-harm" value="0" step="0.1" min="0" max="1" style="width:4rem" />
+                </div>
+                <div class="row">
+                  <label>Camelot</label>
+                  <input type="text" id="flt-camelot" placeholder="e.g. 8B" style="width:4rem" />
+                  <label>Year</label>
+                  <input type="number" id="flt-year-min" placeholder="from" style="width:5rem" />
+                  <input type="number" id="flt-year-max" placeholder="to" style="width:5rem" />
+                  <label><input type="checkbox" id="flt-bridge" /> Require lyric bridge</label>
+                  <button type="button" id="btn-load-pairs">Refresh pairs</button>
+                </div>
+              </div>
+              <div class="mik-wrap" id="pairs-table"></div>
+            </div>
+          </div>
+
+        </main>
       </div>
     </div>
 
-    <details class="panel">
-      <summary>Legacy: Excel upload (no project)</summary>
-      <input type="file" id="xlsx" accept=".xlsx" />
-      <button type="button" id="btn-enrich-xlsx">Run enrich</button>
-      <div class="status" id="xlsx-status" hidden></div>
-    </details>
+    <div id="playlist-ctx" class="ctx-menu" role="menu" hidden>
+      <button type="button" id="ctx-rename" role="menuitem">Rename</button>
+      <button type="button" id="ctx-delete" class="danger" role="menuitem">Delete</button>
+    </div>
+    </div><!-- #spotify-app -->
 
     <script>
       const $ = (id) => document.getElementById(id);
       let currentProjectId = null;
+      let viewMode = null; // 'library' | 'project'
       let pollTimer = null;
+      let songsCache = [];
+      let pairsCache = [];
+      let playlistsCache = [];
+      let libraryCount = 0;
+      let songSort = { key: "tempo", dir: 1 };
+      let pairSort = { key: "lyric_score", dir: -1 };
+      let previewAudio = null;
+      let nowPlayingId = null;
+      let playMode = null; // 'device' | 'preview' | null
+      let allowInlineEdit = true;
+      let keyFilter = null; // e.g. "8B" or null = all
+      let awaitImportSuccessFor = null; // project id — show one-shot success when enrich finishes
+      let importSuccessTimer = null;
+      let backfillPollTimer = null;
+
+      /** Mixed In Key Camelot wheel hues (12 at top, clockwise). Outer B = saturated, inner A = pastel. */
+      const CAMELOT_B = {
+        1: "#3ecf8e",
+        2: "#7ed321",
+        3: "#c6e015",
+        4: "#f5c518",
+        5: "#f0a020",
+        6: "#f07167",
+        7: "#f284b8",
+        8: "#e84a9b",
+        9: "#9b5de5",
+        10: "#7b8cff",
+        11: "#4aa8f0",
+        12: "#2ec4b6",
+      };
+      const CAMELOT_A = {
+        1: "#a8e6cf",
+        2: "#c5e88a",
+        3: "#e4f08a",
+        4: "#f8e59a",
+        5: "#f5d0a0",
+        6: "#f5b8b3",
+        7: "#f5c0d8",
+        8: "#f0a0cc",
+        9: "#c9a8f0",
+        10: "#b8c4ff",
+        11: "#a0d0f5",
+        12: "#9ee0d8",
+      };
+      const CAMELOT_BG = CAMELOT_B;
 
       function esc(s) {
         return String(s ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+      }
+
+      function keyBadge(camelot) {
+        const c = String(camelot || "").trim().toUpperCase();
+        if (!c) return `<span class="key-badge" style="background:#e8eaed;color:#888">—</span>`;
+        const m = /^(\d{1,2})([AB])$/.exec(c);
+        if (!m) return `<span class="key-badge" style="background:#e8eaed">${esc(c)}</span>`;
+        const n = Number(m[1]);
+        const letter = m[2];
+        const bg = (letter === "A" ? CAMELOT_A[n] : CAMELOT_B[n]) || "#e8eaed";
+        return `<span class="key-badge" style="background:${bg}">${esc(c)}</span>`;
+      }
+
+      function energyLevel(s) {
+        const e = Number(s.energy);
+        if (!Number.isFinite(e) || e <= 0) return "—";
+        return Math.max(1, Math.min(10, Math.round(e * 10)));
+      }
+
+      function polar(cx, cy, r, angle) {
+        return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)];
+      }
+
+      function annularSector(cx, cy, r0, r1, a0, a1) {
+        const large = a1 - a0 > Math.PI ? 1 : 0;
+        const [x0, y0] = polar(cx, cy, r1, a0);
+        const [x1, y1] = polar(cx, cy, r1, a1);
+        const [x2, y2] = polar(cx, cy, r0, a1);
+        const [x3, y3] = polar(cx, cy, r0, a0);
+        return `M ${x0} ${y0} A ${r1} ${r1} 0 ${large} 1 ${x1} ${y1} L ${x2} ${y2} A ${r0} ${r0} 0 ${large} 0 ${x3} ${y3} Z`;
+      }
+
+      function setKeyFilter(code) {
+        const next = code && keyFilter === code ? null : code || null;
+        keyFilter = next;
+        updateCamelotWheelSelection();
+        const status = $("key-filter-status");
+        if (!keyFilter) status.textContent = "Click a key to filter";
+        else {
+          const n = songsCache.filter((s) => effectiveCamelot(s).toUpperCase() === keyFilter).length;
+          status.textContent = `Showing ${keyFilter} · ${n} track${n === 1 ? "" : "s"}`;
+        }
+        // Keep pair filter camelot field in sync when on a playlist
+        if ($("flt-camelot")) $("flt-camelot").value = keyFilter || "";
+        renderSongs();
+      }
+
+      function updateCamelotWheelSelection() {
+        const root = $("camelot-wheel");
+        if (!root) return;
+        root.querySelectorAll("path.key-seg").forEach((p) => {
+          const code = p.getAttribute("data-key");
+          p.classList.toggle("selected", !!keyFilter && code === keyFilter);
+          p.classList.toggle("dim", !!keyFilter && code !== keyFilter);
+        });
+      }
+
+      function buildCamelotWheel() {
+        const host = $("camelot-wheel");
+        if (!host) return;
+        const size = 280;
+        if (host.dataset.ready === "1" && host.dataset.size === String(size)) {
+          updateCamelotWheelSelection();
+          return;
+        }
+        const cx = size / 2;
+        const cy = size / 2;
+        // Scale rings with canvas (were fixed at 98/64/32 on a 210px wheel)
+        const rOuter = size * (98 / 210);
+        const rMid = size * (64 / 210);
+        const rInner = size * (32 / 210);
+        const labelSize = Math.round(14 * (size / 210));
+        const step = (Math.PI * 2) / 12;
+        // 12 at top; numbers increase clockwise
+        const nums = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+
+        let paths = "";
+        let labels = "";
+        nums.forEach((n, i) => {
+          const a0 = -Math.PI / 2 + i * step;
+          const a1 = a0 + step;
+          const mid = (a0 + a1) / 2;
+          const codeB = `${n}B`;
+          const codeA = `${n}A`;
+          paths += `<path class="key-seg" data-key="${codeB}" fill="${CAMELOT_B[n]}" d="${annularSector(cx, cy, rMid, rOuter, a0, a1)}"><title>${codeB}</title></path>`;
+          paths += `<path class="key-seg" data-key="${codeA}" fill="${CAMELOT_A[n]}" d="${annularSector(cx, cy, rInner, rMid, a0, a1)}"><title>${codeA}</title></path>`;
+          const [bx, by] = polar(cx, cy, (rOuter + rMid) / 2, mid);
+          const [ax, ay] = polar(cx, cy, (rMid + rInner) / 2, mid);
+          labels += `<text x="${bx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-size="${labelSize}">${codeB}</text>`;
+          labels += `<text x="${ax}" y="${ay}" text-anchor="middle" dominant-baseline="central" font-size="${labelSize}">${codeA}</text>`;
+        });
+
+        host.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img">${paths}${labels}</svg>`;
+        host.dataset.ready = "1";
+        host.dataset.size = String(size);
+        host.querySelectorAll("path.key-seg").forEach((p) => {
+          p.addEventListener("click", () => setKeyFilter(p.getAttribute("data-key")));
+        });
+      }
+
+      function setPlayStatus(msg) {
+        $("play-status").textContent = msg || "";
+      }
+
+      function setPlayingUi(spotifyId, mode) {
+        nowPlayingId = spotifyId || null;
+        playMode = mode || null;
+        $("play-bar").hidden = !nowPlayingId;
+        document.querySelectorAll("button.play[data-play]").forEach((btn) => {
+          const id = btn.getAttribute("data-play");
+          const on = Boolean(nowPlayingId && id === nowPlayingId);
+          btn.classList.toggle("is-playing", on);
+          btn.textContent = on ? "■" : "▶";
+          btn.title = on ? "Stop" : "Play";
+        });
+      }
+
+      async function stopPlayback() {
+        if (previewAudio) {
+          previewAudio.pause();
+          previewAudio.currentTime = 0;
+        }
+        const wasDevice = playMode === "device";
+        setPlayingUi(null, null);
+        if (wasDevice) {
+          try {
+            await api("/api/spotify/pause", { method: "POST" });
+            setPlayStatus("Stopped.");
+          } catch (e) {
+            setPlayStatus("Stopped locally. Spotify pause: " + e.message);
+          }
+        } else {
+          setPlayStatus("Stopped.");
+        }
+      }
+
+      function parseClock(mmss) {
+        const m = /^(\d+):(\d{2})$/.exec(String(mmss).trim());
+        if (!m) return 0;
+        return (Number(m[1]) * 60 + Number(m[2])) * 1000;
+      }
+
+      function effectiveTempo(s) {
+        const o = s.tempo_override;
+        if (o != null && o !== "" && Number(o) > 0) return Number(o);
+        return Number(s.tempo) || 0;
+      }
+
+      function effectiveCamelot(s) {
+        return (s.camelot_override || s.camelot || "").toString();
       }
 
       async function api(path, opts = {}) {
@@ -166,41 +1174,337 @@
         return body;
       }
 
+      /** Prefer Spotify Connect (seekable). Else 30s preview MP3. Else open Spotify at timestamp. */
+      async function playTrack(spotifyId, positionMs = 0) {
+        if (!spotifyId) return;
+        if (nowPlayingId === spotifyId) {
+          await stopPlayback();
+          return;
+        }
+        if (previewAudio) {
+          previewAudio.pause();
+          previewAudio.currentTime = 0;
+        }
+        setPlayStatus("Sending play command to your Spotify app…");
+        try {
+          const r = await api("/api/spotify/play", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ spotifyId, positionMs }),
+          });
+          if (r.ok && r.mode === "device") {
+            const t = positionMs ? ` @ ${Math.floor(positionMs / 1000)}s` : "";
+            setPlayingUi(spotifyId, "device");
+            setPlayStatus(
+              `Playing on your Spotify app${t}. Sound comes from Spotify (phone/desktop) — check that device isn’t muted.`,
+            );
+            return;
+          }
+          if (r.previewUrl && !positionMs) {
+            if (!previewAudio) previewAudio = $("preview-audio");
+            previewAudio.src = r.previewUrl;
+            await previewAudio.play();
+            setPlayingUi(spotifyId, "preview");
+            setPlayStatus("Playing 30s preview in this browser (full tracks need the Spotify app).");
+            previewAudio.onended = () => {
+              if (nowPlayingId === spotifyId) setPlayingUi(null, null);
+              setPlayStatus("");
+            };
+            return;
+          }
+          if (r.openUrl) {
+            window.open(r.openUrl, "_blank", "noopener");
+            if (r.needsReauth) {
+              $("btn-reauth").hidden = false;
+              setPlayStatus(
+                "Need playback permission — click Reconnect Spotify, then keep the Spotify app open and try ▶ again.",
+              );
+              return;
+            }
+            setPlayStatus(
+              "Opened in Spotify. In-browser full playback isn’t available without Spotify’s Web Player SDK; ▶ remote-controls your Spotify app.",
+            );
+            return;
+          }
+          setPlayingUi(null, null);
+          setPlayStatus(r.error || "Could not play");
+        } catch (e) {
+          setPlayingUi(null, null);
+          setPlayStatus("Play error: " + e.message);
+        }
+      }
+
+      $("btn-stop-play").onclick = () => void stopPlayback();
+
+      function sortBy(rows, key, dir, getter) {
+        const g = getter || ((r) => r[key]);
+        return [...rows].sort((a, b) => {
+          const va = g(a);
+          const vb = g(b);
+          if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+          return String(va ?? "").localeCompare(String(vb ?? ""), undefined, { sensitivity: "base" }) * dir;
+        });
+      }
+
+      function bindSortHeaders(tableEl, sortState, onChange) {
+        tableEl.querySelectorAll("th[data-sort]").forEach((th) => {
+          const key = th.getAttribute("data-sort");
+          th.classList.toggle("sorted-asc", sortState.key === key && sortState.dir === 1);
+          th.classList.toggle("sorted-desc", sortState.key === key && sortState.dir === -1);
+          th.onclick = () => {
+            if (sortState.key === key) sortState.dir *= -1;
+            else {
+              sortState.key = key;
+              sortState.dir = 1;
+            }
+            onChange();
+          };
+        });
+      }
+
+      function showSiteGate(show) {
+        $("site-gate").hidden = !show;
+        $("spotify-app").hidden = show;
+      }
+
+      async function checkSiteAuth() {
+        const r = await fetch("/api/site-auth/status", { credentials: "same-origin" });
+        const st = await r.json().catch(() => ({}));
+        if (!st.enabled || st.authenticated) {
+          showSiteGate(false);
+          return true;
+        }
+        showSiteGate(true);
+        return false;
+      }
+
+      $("site-gate-form").onsubmit = async (ev) => {
+        ev.preventDefault();
+        const errEl = $("site-gate-error");
+        const btn = $("site-gate-submit");
+        errEl.textContent = "";
+        btn.disabled = true;
+        try {
+          const r = await fetch("/api/site-auth/login", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: $("site-password").value }),
+          });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            errEl.textContent = data.message || "Invalid password";
+            return;
+          }
+          $("site-password").value = "";
+          showSiteGate(false);
+          await refreshAuth();
+        } catch (e) {
+          errEl.textContent = e.message || "Login failed";
+        } finally {
+          btn.disabled = false;
+        }
+      };
+
       async function refreshAuth() {
         const me = await api("/api/auth/me");
         $("auth-status").textContent = me.loggedIn
           ? `Logged in as ${me.displayName || me.spotifyId}`
-          : "Not logged in — connect Spotify to import private playlists.";
+          : "Not logged in — connect Spotify to import playlists.";
         $("btn-login").hidden = me.loggedIn;
         $("btn-logout").hidden = !me.loggedIn;
+        $("btn-reauth").hidden = !me.loggedIn;
         $("main-app").hidden = !me.loggedIn;
-        if (me.loggedIn) await refreshProjects();
+        if (me.loggedIn) {
+          await refreshSidebar();
+          if (!viewMode || viewMode === "library") await openLibrary();
+        } else {
+          viewMode = null;
+          currentProjectId = null;
+        }
       }
 
       $("btn-login").onclick = () => { window.location.href = "/auth/spotify"; };
+      $("btn-reauth").onclick = async () => {
+        await api("/api/auth/logout", { method: "POST" });
+        window.location.href = "/auth/spotify";
+      };
       $("btn-logout").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); await refreshAuth(); };
 
-      async function refreshProjects() {
-        const { projects } = await api("/api/projects");
-        const el = $("project-list");
-        if (!projects.length) {
-          el.innerHTML = "<p class='hint'>No projects yet.</p>";
-          return;
+      function setActiveSidebar(view, projectId) {
+        document.querySelectorAll(".pl-item").forEach((el) => el.classList.remove("active"));
+        if (view === "library") $("btn-entire-library").classList.add("active");
+        else if (projectId) {
+          const el = document.querySelector(`.pl-item[data-id="${CSS.escape(projectId)}"]`);
+          if (el) el.classList.add("active");
         }
-        el.innerHTML = `<table><thead><tr><th>Name</th><th>Status</th><th>Playlist</th><th></th></tr></thead><tbody>${
-          projects.map((p) => `<tr>
-            <td>${esc(p.name)}</td>
-            <td><span class="badge">${esc(p.status)}</span></td>
-            <td>${p.playlist_url ? `<a href="${esc(p.playlist_url)}" target="_blank" rel="noopener" style="color:#8ab4f8">Spotify</a>` : "—"}</td>
-            <td><button type="button" data-open="${esc(p.id)}">Open</button></td>
-          </tr>`).join("")
-        }</tbody></table>`;
-        el.querySelectorAll("[data-open]").forEach((btn) => {
-          btn.onclick = () => openProject(btn.getAttribute("data-open"));
-        });
       }
 
-      $("btn-refresh-projects").onclick = () => refreshProjects();
+      let ctxPlaylistId = null;
+
+      function hidePlaylistCtx() {
+        const menu = $("playlist-ctx");
+        menu.classList.remove("open");
+        menu.hidden = true;
+        ctxPlaylistId = null;
+      }
+
+      function showPlaylistCtx(ev, playlistId) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ctxPlaylistId = playlistId;
+        const menu = $("playlist-ctx");
+        menu.hidden = false;
+        menu.classList.add("open");
+        const pad = 8;
+        const w = menu.offsetWidth || 160;
+        const h = menu.offsetHeight || 88;
+        let x = ev.clientX;
+        let y = ev.clientY;
+        if (x + w > window.innerWidth - pad) x = window.innerWidth - w - pad;
+        if (y + h > window.innerHeight - pad) y = window.innerHeight - h - pad;
+        menu.style.left = `${Math.max(pad, x)}px`;
+        menu.style.top = `${Math.max(pad, y)}px`;
+      }
+
+      async function renamePlaylist(id) {
+        const cur = playlistsCache.find((x) => x.id === id);
+        const name = prompt("Rename playlist", cur?.name || "");
+        if (!name?.trim()) return;
+        await api(`/api/projects/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name.trim() }),
+        });
+        await refreshSidebar();
+        if (currentProjectId === id) $("detail-title").textContent = name.trim();
+        setActiveSidebar(viewMode, currentProjectId);
+      }
+
+      async function deletePlaylist(id) {
+        const cur = playlistsCache.find((x) => x.id === id);
+        if (!confirm(`Delete playlist “${cur?.name || id}”? Songs stay in Entire Library.`)) return;
+        await api(`/api/projects/${id}`, { method: "DELETE" });
+        if (currentProjectId === id) {
+          currentProjectId = null;
+          await openLibrary();
+        } else {
+          await refreshSidebar();
+          setActiveSidebar(viewMode, currentProjectId);
+        }
+      }
+
+      async function refreshSidebar() {
+        const [{ projects }, lib] = await Promise.all([
+          api("/api/projects"),
+          api("/api/library"),
+        ]);
+        playlistsCache = projects;
+        libraryCount = lib.count || 0;
+        $("library-count").textContent = String(libraryCount);
+
+        const list = $("playlist-sidebar");
+        const libBtn = $("btn-entire-library");
+        list.innerHTML = "";
+        list.appendChild(libBtn);
+        $("library-count").textContent = String(libraryCount);
+
+        for (const p of projects) {
+          const row = document.createElement("div");
+          row.className = "pl-item";
+          row.dataset.id = p.id;
+          row.title = "Right-click for rename / delete";
+          row.innerHTML = `
+            <span class="pl-name">${esc(p.name)}</span>
+            <span class="pl-count">${esc(p.song_count ?? 0)}</span>`;
+          row.addEventListener("click", () => openProject(p.id));
+          row.addEventListener("contextmenu", (ev) => showPlaylistCtx(ev, p.id));
+          list.appendChild(row);
+        }
+
+        setActiveSidebar(viewMode, currentProjectId);
+      }
+
+      $("ctx-rename").onclick = async () => {
+        const id = ctxPlaylistId;
+        hidePlaylistCtx();
+        if (id) await renamePlaylist(id);
+      };
+      $("ctx-delete").onclick = async () => {
+        const id = ctxPlaylistId;
+        hidePlaylistCtx();
+        if (id) await deletePlaylist(id);
+      };
+      document.addEventListener("click", hidePlaylistCtx);
+      document.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") hidePlaylistCtx();
+      });
+      window.addEventListener("blur", hidePlaylistCtx);
+      window.addEventListener("scroll", hidePlaylistCtx, true);
+
+      $("btn-entire-library").onclick = () => openLibrary();
+      $("btn-new-playlist").onclick = () => {
+        $("import-panel").hidden = false;
+        $("settings-panel").hidden = true;
+        $("empty-state").hidden = true;
+        $("project-detail").hidden = true;
+      };
+      $("btn-cancel-import").onclick = () => {
+        $("import-panel").hidden = true;
+        if (!viewMode || viewMode === "library") void openLibrary();
+        else if (currentProjectId) void openProject(currentProjectId);
+        else $("empty-state").hidden = false;
+      };
+
+      function openSettings() {
+        $("settings-panel").hidden = false;
+        $("import-panel").hidden = true;
+        $("empty-state").hidden = true;
+        $("project-detail").hidden = true;
+        $("reset-confirm").value = "";
+        $("btn-reset-data").disabled = true;
+        $("reset-status").hidden = true;
+        $("reset-status").textContent = "";
+      }
+
+      $("btn-open-settings").onclick = () => openSettings();
+      $("btn-close-settings").onclick = () => {
+        $("settings-panel").hidden = true;
+        if (!viewMode || viewMode === "library") void openLibrary();
+        else if (currentProjectId) void openProject(currentProjectId);
+        else $("empty-state").hidden = false;
+      };
+      $("reset-confirm").oninput = () => {
+        $("btn-reset-data").disabled = $("reset-confirm").value.trim() !== "DELETE ALL";
+      };
+      $("btn-reset-data").onclick = async () => {
+        if ($("reset-confirm").value.trim() !== "DELETE ALL") return;
+        if (!confirm("This permanently deletes all playlists, library tracks, and lyrics cache. Continue?")) return;
+        const st = $("reset-status");
+        st.hidden = false;
+        st.textContent = "Deleting…";
+        $("btn-reset-data").disabled = true;
+        try {
+          const res = await api("/api/settings/reset-data", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ confirm: "DELETE ALL" }),
+          });
+          const d = res.deleted || {};
+          st.textContent = `Cleared ${d.projects ?? 0} playlists, ${d.songs ?? 0} songs, ${d.libraryTracks ?? 0} library tracks, ${d.lyricsCache ?? 0} lyric caches.`;
+          $("reset-confirm").value = "";
+          viewMode = null;
+          currentProjectId = null;
+          songsCache = [];
+          pairsCache = [];
+          await refreshSidebar();
+          $("project-detail").hidden = true;
+          $("empty-state").hidden = false;
+        } catch (e) {
+          st.textContent = e.message || "Reset failed";
+          $("btn-reset-data").disabled = false;
+        }
+      };
 
       $("btn-load-playlists").onclick = async () => {
         const { playlists } = await api("/api/spotify/playlists");
@@ -232,85 +1536,509 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
           });
-          st.textContent = `Project created. Enriching in background (job ${job.id.slice(0, 8)}…).`;
-          await refreshProjects();
+          st.textContent = `Playlist created. Enriching in background (job ${job.id.slice(0, 8)}…).`;
+          $("import-panel").hidden = true;
+          awaitImportSuccessFor = project.id;
+          await refreshSidebar();
           openProject(project.id);
         } catch (e) {
           st.textContent = "Error: " + e.message;
         }
       };
 
-      async function openProject(id) {
-        currentProjectId = id;
+      let contentTab = "tracks"; // 'tracks' | 'pairs'
+      let pairsLoadedFor = null;
+
+      function setContentTab(tab) {
+        contentTab = tab;
+        $("tab-btn-tracks").classList.toggle("active", tab === "tracks");
+        $("tab-btn-pairs").classList.toggle("active", tab === "pairs");
+        $("tab-tracks").hidden = tab !== "tracks";
+        $("tab-pairs").hidden = tab !== "pairs";
+        if (tab === "pairs" && viewMode === "project" && currentProjectId) {
+          if (pairsLoadedFor !== currentProjectId || !pairsCache.length) {
+            void loadPairs();
+          }
+        }
+      }
+
+      $("tab-btn-tracks").onclick = () => setContentTab("tracks");
+      $("tab-btn-pairs").onclick = () => {
+        if (viewMode !== "project") return;
+        setContentTab("pairs");
+      };
+
+      async function openLibrary() {
+        viewMode = "library";
+        currentProjectId = null;
+        allowInlineEdit = false;
+        pairsLoadedFor = null;
+        if (pollTimer) clearInterval(pollTimer);
+        pollTimer = null;
+        $("empty-state").hidden = true;
+        $("import-panel").hidden = true;
+        $("settings-panel").hidden = true;
         $("project-detail").hidden = false;
+        $("tab-btn-pairs").disabled = true;
+        $("tab-btn-pairs").title = "Open a playlist to see pair candidates";
+        setContentTab("tracks");
+        $("detail-title").textContent = "Entire Library";
+        $("detail-meta").hidden = true;
+        $("detail-meta").textContent = "";
+        $("job-status").textContent = "";
+        if (importSuccessTimer) clearTimeout(importSuccessTimer);
+        awaitImportSuccessFor = null;
+        $("lyric-results").innerHTML = "";
+        setActiveSidebar("library", null);
+        const { songs, count } = await api("/api/library");
+        libraryCount = count;
+        $("library-count").textContent = String(count);
+        $("detail-count").textContent = count ? `${count} songs` : "";
+        songsCache = songs;
+        pairsCache = [];
+        renderSongs();
+        updateBackfillButton();
+        await refreshSidebar();
+      }
+
+      async function openProject(id) {
+        viewMode = "project";
+        currentProjectId = id;
+        allowInlineEdit = true;
+        pairsLoadedFor = null;
+        $("empty-state").hidden = true;
+        $("import-panel").hidden = true;
+        $("settings-panel").hidden = true;
+        $("project-detail").hidden = false;
+        $("tab-btn-pairs").disabled = false;
+        $("tab-btn-pairs").title = "";
+        setContentTab("tracks");
+        $("lyric-results").innerHTML = "";
+        $("lyric-q").value = "";
+        $("pairs-table").innerHTML = "";
+        pairsCache = [];
+        setActiveSidebar("project", id);
         await loadProjectDetail();
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(loadProjectDetail, 3000);
       }
 
       async function loadProjectDetail() {
-        if (!currentProjectId) return;
+        if (!currentProjectId || viewMode !== "project") return;
         const { project, songs, jobs } = await api(`/api/projects/${currentProjectId}`);
         $("detail-title").textContent = project.name;
-        $("detail-meta").textContent = [
-          project.brief && `Brief: ${project.brief}`,
-          project.playlist_name && `Playlist: ${project.playlist_name}`,
-          `Status: ${project.status}`,
-          `${songs.length} songs`,
-        ].filter(Boolean).join(" · ");
+        $("detail-count").textContent = songs.length ? `${songs.length} songs` : "";
+        if (project.brief) {
+          $("detail-meta").hidden = false;
+          $("detail-meta").textContent = project.brief;
+        } else {
+          $("detail-meta").hidden = true;
+          $("detail-meta").textContent = "";
+        }
 
         const running = jobs.find((j) => j.status === "running" || j.status === "pending");
         const failed = jobs.find((j) => j.status === "failed");
         const js = $("job-status");
-        if (running) {
+        if (backfillPollTimer) {
+          // keep backfill progress text
+        } else if (running) {
           js.textContent = `${running.type}: ${running.progress}/${running.progress_total} — ${running.progress_label || "…"}`;
         } else if (failed) {
           js.textContent = `Job failed: ${failed.error}`;
-        } else {
-          js.textContent = project.status === "ready" ? "Enrich complete." : "";
+        } else if (
+          awaitImportSuccessFor === currentProjectId &&
+          (project.status === "ready" || project.status === "lyrics")
+        ) {
+          js.textContent = `Imported ${songs.length} songs successfully.`;
+          awaitImportSuccessFor = null;
+          if (importSuccessTimer) clearTimeout(importSuccessTimer);
+          importSuccessTimer = setTimeout(() => {
+            if ($("job-status").textContent.startsWith("Imported ")) {
+              $("job-status").textContent = "";
+            }
+          }, 6000);
+        } else if (!js.textContent.startsWith("Imported ")) {
+          js.textContent = "";
         }
 
-        renderSongs(songs);
+        songsCache = songs;
+        renderSongs();
+        updateBackfillButton();
+        // refresh counts quietly
+        const { projects } = await api("/api/projects");
+        playlistsCache = projects;
+        const mine = projects.find((p) => p.id === currentProjectId);
+        if (mine) {
+          const countEl = document.querySelector(`.pl-item[data-id="${CSS.escape(currentProjectId)}"] .pl-count`);
+          if (countEl) countEl.textContent = String(mine.song_count ?? songs.length);
+        }
       }
 
-      function renderSongs(songs) {
-        if (!songs.length) {
-          $("songs-table").innerHTML = "<p class='hint'>No songs yet.</p>";
+      function missingMetaCount() {
+        return songsCache.filter((s) => {
+          const tempo = Number(s.tempo_override ?? s.tempo) || 0;
+          const camelot = String(s.camelot_override || s.camelot || "").trim();
+          return !tempo || !camelot;
+        }).length;
+      }
+
+      function updateBackfillButton() {
+        const btn = $("btn-backfill-meta");
+        const n = missingMetaCount();
+        if (!viewMode || n === 0 || backfillPollTimer) {
+          btn.hidden = true;
           return;
         }
-        const cols = ["artist", "title", "tempo", "tempo_override", "camelot", "camelot_override", "bpm_key_source", "needs_review"];
-        const thead = `<tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}<th>Spotify</th></tr>`;
-        const tbody = songs.map((s) => `<tr data-id="${esc(s.id)}">
-          <td>${esc(s.artist)}</td>
-          <td>${esc(s.title)}</td>
-          <td>${esc(s.tempo)}</td>
-          <td class="override"><input type="number" step="0.1" data-f="tempo_override" value="${s.tempo_override ?? ""}" placeholder="—" /></td>
-          <td>${esc(s.camelot)}</td>
-          <td class="override"><input type="text" data-f="camelot_override" value="${esc(s.camelot_override ?? "")}" placeholder="e.g. 8B" /></td>
-          <td>${esc(s.bpm_key_source)}</td>
-          <td>${s.needs_review ? "yes" : ""}</td>
-          <td>${s.spotify_url ? `<a href="${esc(s.spotify_url)}" target="_blank" rel="noopener" style="color:#8ab4f8">↗</a>` : ""}</td>
-        </tr>`).join("");
-        $("songs-table").innerHTML = `<table><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
-        $("songs-table").querySelectorAll("input").forEach((inp) => {
-          inp.onchange = async () => {
-            const row = inp.closest("tr");
-            const id = row.getAttribute("data-id");
-            const tempo = row.querySelector('[data-f="tempo_override"]').value;
-            const camelot = row.querySelector('[data-f="camelot_override"]').value;
-            await api(`/api/songs/${id}`, {
+        btn.hidden = false;
+        btn.textContent = `Fill missing BPM/key (${n})`;
+        btn.disabled = false;
+      }
+
+      async function startMetaBackfill() {
+        const btn = $("btn-backfill-meta");
+        const js = $("job-status");
+        btn.disabled = true;
+        btn.hidden = true;
+        js.textContent = "Starting BPM/key backfill…";
+        try {
+          const path =
+            viewMode === "library"
+              ? "/api/library/backfill-meta"
+              : `/api/projects/${currentProjectId}/backfill-meta`;
+          const { job } = await api(path, { method: "POST" });
+          if (backfillPollTimer) clearInterval(backfillPollTimer);
+          const poll = async () => {
+            try {
+              const { job: j } = await api(`/api/backfill-meta/${job.id}`);
+              js.textContent = j.progress_label || "Backfilling…";
+              if (j.status === "running") return;
+              if (backfillPollTimer) {
+                clearInterval(backfillPollTimer);
+                backfillPollTimer = null;
+              }
+              if (j.status === "failed") {
+                js.textContent = "Backfill failed: " + (j.error || "unknown");
+              } else {
+                js.textContent = j.progress_label || "Backfill done.";
+              }
+              if (viewMode === "library") await openLibrary();
+              else if (currentProjectId) await loadProjectDetail();
+              updateBackfillButton();
+            } catch (e) {
+              if (backfillPollTimer) {
+                clearInterval(backfillPollTimer);
+                backfillPollTimer = null;
+              }
+              js.textContent = "Backfill error: " + e.message;
+              updateBackfillButton();
+            }
+          };
+          backfillPollTimer = setInterval(poll, 800);
+          await poll();
+        } catch (e) {
+          js.textContent = "Backfill error: " + e.message;
+          updateBackfillButton();
+        }
+      }
+
+      $("btn-backfill-meta").onclick = () => void startMetaBackfill();
+
+      function renderSongs() {
+        buildCamelotWheel();
+        updateCamelotWheelSelection();
+        const el = $("songs-table");
+        if (!songsCache.length) {
+          el.innerHTML = "<p class='hint' style='padding:1rem'>No songs yet.</p>";
+          $("key-filter-status").textContent = "Click a key to filter";
+          return;
+        }
+        const filtered = keyFilter
+          ? songsCache.filter((s) => effectiveCamelot(s).toUpperCase() === keyFilter)
+          : songsCache;
+        if (keyFilter) {
+          const n = filtered.length;
+          $("key-filter-status").textContent = `Showing ${keyFilter} · ${n} track${n === 1 ? "" : "s"}`;
+        } else {
+          $("key-filter-status").textContent = `All keys · ${songsCache.length} tracks`;
+        }
+        if (!filtered.length) {
+          el.innerHTML = `<p class='hint' style='padding:1rem'>No tracks in ${esc(keyFilter)}. <button type="button" class="secondary" id="btn-clear-key-inline">Show all keys</button></p>`;
+          const b = $("btn-clear-key-inline");
+          if (b) b.onclick = () => setKeyFilter(null);
+          return;
+        }
+        const getters = {
+          artist: (s) => s.artist,
+          title: (s) => s.title,
+          tempo: (s) => effectiveTempo(s),
+          camelot: (s) => effectiveCamelot(s),
+          energy: (s) => {
+            const e = energyLevel(s);
+            return e === "—" ? -1 : e;
+          },
+        };
+        const sorted = sortBy(filtered, songSort.key, songSort.dir, getters[songSort.key]);
+        const thead = `<tr>
+          <th></th>
+          <th data-sort="artist">Artist</th>
+          <th data-sort="title">Title</th>
+          <th data-sort="tempo" class="num">Tempo</th>
+          <th data-sort="camelot" class="key">Key result</th>
+          <th data-sort="energy" class="energy">Energy</th>
+        </tr>`;
+        const tbody = sorted
+          .map((s) => {
+            const tempo = Math.round(effectiveTempo(s) || 0) || "—";
+            const camelot = effectiveCamelot(s);
+            const unknownArtist = !s.artist || /^unknown$/i.test(s.artist);
+            const tempoOverridden = s.tempo_override != null && s.tempo_override !== "";
+            return `<tr data-id="${esc(s.id)}" data-spotify="${esc(s.spotify_id_resolved)}">
+            <td class="play-cell"><button type="button" class="play" data-play="${esc(s.spotify_id_resolved)}" title="Play">▶</button></td>
+            <td class="artist${unknownArtist ? " unknown" : ""}">${esc(s.artist || "Unknown")}</td>
+            <td class="title">${esc(s.title)}</td>
+            <td class="num editable" data-f="tempo_override" title="Double-click to override">${tempoOverridden ? `<strong>${esc(tempo)}</strong>` : esc(tempo)}</td>
+            <td class="key editable" data-f="camelot_override" title="Double-click to override">${keyBadge(camelot)}</td>
+            <td class="energy">${esc(energyLevel(s))}</td>
+          </tr>`;
+          })
+          .join("");
+        el.innerHTML = `<table class="mik"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
+        bindSortHeaders(el, songSort, renderSongs);
+        el.querySelectorAll("[data-play]").forEach((btn) => {
+          btn.onclick = () => playTrack(btn.getAttribute("data-play"), 0);
+        });
+        el.querySelectorAll("td.editable").forEach((td) => {
+          if (!allowInlineEdit) return;
+          td.ondblclick = () => beginInlineEdit(td);
+        });
+        if (nowPlayingId) setPlayingUi(nowPlayingId, playMode);
+      }
+
+      function beginInlineEdit(td) {
+        if (!allowInlineEdit) return;
+        if (td.classList.contains("editing")) return;
+        const row = td.closest("tr");
+        const id = row.getAttribute("data-id");
+        const field = td.getAttribute("data-f");
+        const song = songsCache.find((s) => s.id === id);
+        if (!song) return;
+        const current =
+          field === "tempo_override"
+            ? (song.tempo_override ?? song.tempo ?? "")
+            : (song.camelot_override ?? song.camelot ?? "");
+        td.classList.add("editing");
+        if (field === "camelot_override") {
+          td.innerHTML = `<input type="text" value="${esc(current)}" style="width:3.5rem;text-align:center" />`;
+        } else {
+          td.innerHTML = `<input type="number" step="0.1" value="${esc(current)}" />`;
+        }
+        const inp = td.querySelector("input");
+        inp.focus();
+        inp.select();
+        const finish = async (save) => {
+          if (!td.classList.contains("editing")) return;
+          td.classList.remove("editing");
+          if (!save) {
+            renderSongs();
+            return;
+          }
+          const tempoVal =
+            field === "tempo_override"
+              ? inp.value
+              : song.tempo_override == null
+                ? ""
+                : String(song.tempo_override);
+          const camelotVal =
+            field === "camelot_override"
+              ? inp.value
+              : song.camelot_override ?? "";
+          try {
+            const { song: updated } = await api(`/api/songs/${id}`, {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
-                tempo_override: tempo === "" ? null : Number(tempo),
-                camelot_override: camelot === "" ? null : camelot,
+                tempo_override: tempoVal === "" ? null : Number(tempoVal),
+                camelot_override: camelotVal === "" ? null : camelotVal,
               }),
             });
-          };
-        });
+            const idx = songsCache.findIndex((s) => s.id === id);
+            if (idx >= 0) songsCache[idx] = { ...songsCache[idx], ...updated };
+          } catch (e) {
+            setPlayStatus("Override save failed: " + e.message);
+          }
+          renderSongs();
+        };
+        inp.onkeydown = (ev) => {
+          if (ev.key === "Enter") finish(true);
+          if (ev.key === "Escape") finish(false);
+        };
+        inp.onblur = () => finish(true);
       }
 
-      $("btn-load-pairs").onclick = async () => {
+      function renderBridgeHtml(bridgeText, idA, idB, lyricScore = 0, notes = "") {
+        const score = Number(lyricScore) || 0;
+        const missingLyrics = /missing_lyrics/i.test(String(notes || ""));
+        const parts = String(bridgeText || "")
+          .split(/\s*\|\s*/)
+          .map((p) => p.trim())
+          .filter(Boolean);
+
+        const timedParts = [];
+        const phraseParts = [];
+        for (const part of parts) {
+          const timed = /^(.+?)\s*\(A@(\d+:\d+)→B@(\d+:\d+)\)$/.exec(part);
+          if (timed) timedParts.push(timed);
+          else phraseParts.push(part);
+        }
+
+        if (!parts.length) {
+          let reason = "No shared lyric phrases found between these songs.";
+          if (missingLyrics) {
+            reason = "Lyrics missing for one or both songs — can’t score a lyric bridge yet.";
+          } else if (score > 0.05) {
+            reason = "Lyric overlap scored, but no clear shared phrases to list.";
+          }
+          return `<details class="pair-bridge">
+            <summary>Lyric bridge <span class="bridge-count">· none</span></summary>
+            <p class="hint" style="margin:0 0 0.35rem">${esc(reason)}</p>
+            ${score > 0 ? `<p class="hint" style="margin:0 0 0.35rem">Lyric score: <strong>${score.toFixed(2)}</strong></p>` : ""}
+          </details>`;
+        }
+
+        const items = [];
+        for (const timed of timedParts) {
+          const phrase = timed[1].trim();
+          const aMs = parseClock(timed[2]);
+          const bMs = parseClock(timed[3]);
+          items.push(`<div class="bridge-item timed">
+            <span class="phrase">“${esc(phrase)}”</span>
+            <button type="button" class="play tiny" data-play="${esc(idA)}" data-ms="${aMs}" title="Play A at ${timed[2]}">A @ ${esc(timed[2])}</button>
+            <span class="bridge-arrow">→</span>
+            <button type="button" class="play tiny" data-play="${esc(idB)}" data-ms="${bMs}" title="Play B at ${timed[3]}">B @ ${esc(timed[3])}</button>
+          </div>`);
+        }
+        for (const phrase of phraseParts) {
+          items.push(`<div class="bridge-item untimed">
+            <span class="phrase">“${esc(phrase)}”</span>
+            <span class="bridge-tag">shared phrase · no timestamps</span>
+          </div>`);
+        }
+
+        const nTimed = timedParts.length;
+        const nPhrase = phraseParts.length;
+        const countLabel = nTimed
+          ? `· ${nTimed} timed${nPhrase ? ` · ${nPhrase} phrase` : ""}`
+          : `· ${nPhrase} shared phrase${nPhrase === 1 ? "" : "s"} (no times)`;
+        const hint = nTimed
+          ? ""
+          : `<p class="hint" style="margin:0 0 0.45rem">Matched in plain lyrics only — no LRCLIB timestamps, so jump-to-line play isn’t available.</p>`;
+
+        return `<details class="pair-bridge">
+          <summary>Lyric bridge <span class="bridge-count">${countLabel}</span></summary>
+          ${hint}
+          <div class="bridge-bits">${items.join("")}</div>
+        </details>`;
+      }
+
+      function renderPairs() {
+        const el = $("pairs-table");
+        if (!pairsCache.length) {
+          el.innerHTML = "<p class='hint' style='padding:1rem'>No pairs loaded.</p>";
+          return;
+        }
+        const getters = {
+          song_a_artist: (r) => r.song_a_artist,
+          song_a_title: (r) => r.song_a_title,
+          song_b_artist: (r) => r.song_b_artist,
+          song_b_title: (r) => r.song_b_title,
+          bpm_a: (r) => Number(r.bpm_a) || 0,
+          bpm_b: (r) => Number(r.bpm_b) || 0,
+          bpm_delta: (r) => Number(r.bpm_delta) || 0,
+          harmonic_score: (r) => Number(r.harmonic_score) || 0,
+          lyric_score: (r) => Number(r.lyric_score) || 0,
+        };
+        const sorted = sortBy(
+          pairsCache,
+          pairSort.key,
+          pairSort.dir,
+          getters[pairSort.key] || ((r) => r[pairSort.key]),
+        );
+        const show = sorted.slice(0, 200);
+        const sortBtns = [
+          ["lyric_score", "Lyric"],
+          ["harmonic_score", "Harmonic"],
+          ["bpm_delta", "BPM Δ"],
+          ["song_a_artist", "A artist"],
+          ["song_b_artist", "B artist"],
+        ]
+          .map(
+            ([key, label]) =>
+              `<button type="button" data-pair-sort="${key}" class="${pairSort.key === key ? "active" : ""}">${label}${
+                pairSort.key === key ? (pairSort.dir < 0 ? " ▾" : " ▴") : ""
+              }</button>`,
+          )
+          .join("");
+
+        el.innerHTML = `
+          <div class="pair-sort-bar">
+            <span>Sort</span>${sortBtns}
+            <span style="margin-left:auto">Showing ${show.length} of ${pairsCache.length}</span>
+          </div>
+          <div class="pair-list">${show
+            .map((r) => {
+              const bpmA = Math.round(Number(r.bpm_a) || 0) || "—";
+              const bpmB = Math.round(Number(r.bpm_b) || 0) || "—";
+              const delta = Math.round(Number(r.bpm_delta) || 0);
+              return `<article class="pair-card">
+                <div class="pair-song">
+                  <div class="lane">A</div>
+                  <div class="who">
+                    <div class="artist">${esc(r.song_a_artist)}</div>
+                    <div class="title">${esc(r.song_a_title)}</div>
+                  </div>
+                  <div class="bpm"><span>BPM</span>${esc(bpmA)}</div>
+                  <div class="key-cell">${keyBadge(r.camelot_a)}</div>
+                </div>
+                <div class="pair-song">
+                  <div class="lane">B</div>
+                  <div class="who">
+                    <div class="artist">${esc(r.song_b_artist)}</div>
+                    <div class="title">${esc(r.song_b_title)}</div>
+                  </div>
+                  <div class="bpm"><span>BPM</span>${esc(bpmB)}</div>
+                  <div class="key-cell">${keyBadge(r.camelot_b)}</div>
+                </div>
+                ${renderBridgeHtml(r.bridge_phrases, r.song_a_spotify_id, r.song_b_spotify_id, r.lyric_score, r.notes)}
+                <div class="pair-meta">
+                  <span>Δ BPM <strong>${esc(delta)}</strong></span>
+                  <span>Harmonic <strong>${Number(r.harmonic_score).toFixed(2)}</strong></span>
+                  <span>Lyric <strong>${Number(r.lyric_score).toFixed(2)}</strong></span>
+                  ${r.key_relationship ? `<span>${esc(r.key_relationship)}</span>` : ""}
+                </div>
+              </article>`;
+            })
+            .join("")}</div>`;
+
+        el.querySelectorAll("[data-pair-sort]").forEach((btn) => {
+          btn.onclick = () => {
+            const key = btn.getAttribute("data-pair-sort");
+            if (pairSort.key === key) pairSort.dir *= -1;
+            else {
+              pairSort.key = key;
+              pairSort.dir = key === "lyric_score" || key === "harmonic_score" ? -1 : 1;
+            }
+            renderPairs();
+          };
+        });
+        el.querySelectorAll("[data-play]").forEach((btn) => {
+          btn.onclick = () =>
+            playTrack(btn.getAttribute("data-play"), Number(btn.getAttribute("data-ms") || 0));
+        });
+        if (nowPlayingId) setPlayingUi(nowPlayingId, playMode);
+      }
+
+      async function loadPairs() {
+        if (viewMode !== "project" || !currentProjectId) return;
         const params = new URLSearchParams({
           mode: $("pair-mode").value,
           bpmTolerance: $("flt-bpm").value || "10",
@@ -322,29 +2050,81 @@
         if ($("flt-year-min").value) params.set("yearMin", $("flt-year-min").value);
         if ($("flt-year-max").value) params.set("yearMax", $("flt-year-max").value);
         if ($("flt-bridge").checked) params.set("requireBridge", "1");
-        $("pairs-table").innerHTML = "<p class='hint'>Loading pairs…</p>";
+        $("pairs-table").innerHTML = "<p class='hint' style='padding:1rem'>Loading pairs…</p>";
         const { pairs, mode } = await api(`/api/projects/${currentProjectId}/pairs?${params}`);
+        pairsCache = pairs;
+        pairsLoadedFor = currentProjectId;
         if (!pairs.length) {
-          $("pairs-table").innerHTML = "<p class='hint'>No pairs match these filters (need BPM + Camelot; try widening BPM or lowering min lyric).</p>";
+          $("pairs-table").innerHTML = "<p class='hint' style='padding:1rem'>No pairs match these filters (need BPM + Camelot; try widening BPM or lowering min lyric). Mode: " + esc(mode) + "</p>";
           return;
         }
-        const show = pairs.slice(0, 200);
-        const cols = ["song_a_artist","song_a_title","song_b_artist","song_b_title","bpm_delta","key_relationship","harmonic_score","lyric_score","bridge_phrases"];
-        $("pairs-table").innerHTML = `<p class="hint">Mode: ${esc(mode)} — showing ${show.length} of ${pairs.length}</p><table><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${
-          show.map((r) => `<tr>${cols.map((c) => `<td>${esc(r[c])}</td>`).join("")}</tr>`).join("")
-        }</tbody></table>`;
+        renderPairs();
+      }
+
+      $("btn-load-pairs").onclick = () => loadPairs();
+
+      $("btn-lyric-search").onclick = async () => {
+        const q = $("lyric-q").value.trim();
+        const box = $("lyric-results");
+        if (q.length < 2) {
+          box.textContent = "Type at least 2 characters.";
+          return;
+        }
+        box.textContent = "Searching…";
+        try {
+          const path =
+            viewMode === "library"
+              ? `/api/library/lyrics/search?q=${encodeURIComponent(q)}`
+              : `/api/projects/${currentProjectId}/lyrics/search?q=${encodeURIComponent(q)}`;
+          const { hits } = await api(path);
+          if (!hits.length) {
+            box.textContent = "No lyric matches in this project (lyrics job may still be running).";
+            return;
+          }
+          box.innerHTML = hits
+            .map(
+              (h) => `<div class="lyric-hit">
+                <button type="button" class="play tiny" data-play="${esc(h.spotify_id)}" data-ms="${h.match_ms ?? 0}">▶</button>
+                <strong>${esc(h.artist)}</strong> — ${esc(h.title)}
+                ${h.match_ms != null ? `<span class="badge">${Math.floor(h.match_ms / 60000)}:${String(Math.floor((h.match_ms % 60000) / 1000)).padStart(2, "0")}</span>` : ""}
+                <div class="snip">${esc(h.snippet)}</div>
+              </div>`,
+            )
+            .join("");
+          box.querySelectorAll("[data-play]").forEach((btn) => {
+            btn.onclick = () =>
+              playTrack(btn.getAttribute("data-play"), Number(btn.getAttribute("data-ms") || 0));
+          });
+        } catch (e) {
+          box.textContent = "Search failed: " + e.message;
+        }
+      };
+      $("lyric-q").onkeydown = (ev) => {
+        if (ev.key === "Enter") $("btn-lyric-search").click();
       };
 
       $("btn-export-csv").onclick = async () => {
+        if (viewMode === "library") {
+          const header = ["artist","title","tempo","camelot","spotify_url","energy"];
+          const lines = [header.join(",")].concat(songsCache.map((s) =>
+            header.map((h) => `"${String(s[h] ?? "").replaceAll('"', '""')}"`).join(",")
+          ));
+          const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "entire_library.csv";
+          a.click();
+          return;
+        }
         const { songs } = await api(`/api/projects/${currentProjectId}`);
-        const header = ["artist","title","tempo","tempo_override","camelot","camelot_override","spotify_url","bpm_key_source"];
+        const header = ["artist","title","tempo","tempo_override","camelot","camelot_override","spotify_url"];
         const lines = [header.join(",")].concat(songs.map((s) =>
           header.map((h) => `"${String(s[h] ?? "").replaceAll('"', '""')}"`).join(",")
         ));
         const blob = new Blob([lines.join("\n")], { type: "text/csv" });
         const a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
-        a.download = "project_songs.csv";
+        a.download = "playlist_songs.csv";
         a.click();
       };
 
@@ -353,24 +2133,70 @@
         if (!f) return;
         const st = $("xlsx-status");
         st.hidden = false;
-        st.textContent = "Working…";
+        st.textContent = "Uploading…";
         const body = new FormData();
         body.append("file", f);
-        const res = await fetch("/api/enrich", { method: "POST", body });
-        if (!res.ok) { st.textContent = await res.text(); return; }
-        const blob = await res.blob();
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "catalog_enriched.csv";
-        a.click();
-        st.textContent = "Done.";
+        const start = await fetch("/api/enrich", { method: "POST", body });
+        const startJson = await start.json().catch(() => ({}));
+        if (!start.ok) {
+          st.textContent = startJson.error || (await start.text());
+          return;
+        }
+        const jobId = startJson.jobId;
+        st.textContent = "Starting enrich…";
+
+        const poll = async () => {
+          const r = await fetch(`/api/enrich/${jobId}`);
+          const { job } = await r.json();
+          if (!job) {
+            st.textContent = "Job lost — refresh and try again.";
+            return;
+          }
+          if (job.status === "running") {
+            const pct =
+              job.progress_total > 0
+                ? ` ${job.progress}/${job.progress_total}`
+                : "";
+            st.textContent = `Enriching${pct}: ${job.progress_label || "…"}`;
+            setTimeout(poll, 600);
+            return;
+          }
+          if (job.status === "failed") {
+            st.textContent = "Failed: " + (job.error || "unknown error");
+            return;
+          }
+          st.textContent = job.progress_label || "Done — downloading…";
+          const csvRes = await fetch(`/api/enrich/${jobId}/csv`);
+          if (!csvRes.ok) {
+            st.textContent = "Done but download failed.";
+            return;
+          }
+          const blob = await csvRes.blob();
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = "catalog_enriched.csv";
+          a.click();
+          st.textContent = "Done — CSV downloaded.";
+        };
+        poll();
       };
 
       const params = new URLSearchParams(location.search);
       if (params.get("connected")) history.replaceState({}, "", "/");
       if (params.get("auth_error")) $("auth-status").textContent = "Auth error: " + params.get("auth_error");
 
-      refreshAuth().catch((e) => { $("auth-status").textContent = "Error: " + e.message; });
+      $("btn-clear-key").onclick = () => setKeyFilter(null);
+      buildCamelotWheel();
+
+      (async () => {
+        const ok = await checkSiteAuth();
+        if (!ok) return;
+        await refreshAuth();
+      })().catch((e) => {
+        const el = $("auth-status");
+        if (el) el.textContent = "Error: " + e.message;
+        else $("site-gate-error").textContent = e.message || "Failed to load";
+      });
     </script>
   </body>
 </html>

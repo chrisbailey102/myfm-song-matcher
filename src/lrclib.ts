@@ -1,7 +1,7 @@
 import { parseLrcLines } from "./lyricClean.js";
 
 const UA =
-  "MyFMSongMatcher/0.1 (https://github.com/chrisbailey102/myfm-song-matcher)";
+  "SongMatcher/0.1 (https://github.com/chrisbailey102/myfm-song-matcher)";
 
 export type LrcLibTrack = {
   id: number;

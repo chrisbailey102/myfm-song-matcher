@@ -1,3 +1,8 @@
+-- Isolated schema so Song Matcher can share a Postgres instance with other
+-- On The Sly apps (dashboard already owns public.projects with integer ids).
+CREATE SCHEMA IF NOT EXISTS song_matcher;
+SET search_path TO song_matcher;
+
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   spotify_id TEXT UNIQUE NOT NULL,

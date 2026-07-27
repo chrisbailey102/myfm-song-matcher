@@ -7,6 +7,8 @@ const SCOPES = [
   "playlist-read-private",
   "playlist-read-collaborative",
   "user-read-email",
+  "user-read-playback-state",
+  "user-modify-playback-state",
 ].join(" ");
 
 export function getAppBaseUrl(): string {
@@ -36,7 +38,7 @@ export function setSessionUser(res: Response, userId: string): void {
     "base64url",
   );
   const sig = sign(payload);
-  res.cookie("myfm_session", `${payload}.${sig}`, {
+  res.cookie("song_matcher_session", `${payload}.${sig}`, {
     httpOnly: true,
     sameSite: "lax",
     secure: getAppBaseUrl().startsWith("https"),
@@ -46,11 +48,14 @@ export function setSessionUser(res: Response, userId: string): void {
 }
 
 export function clearSession(res: Response): void {
+  res.clearCookie("song_matcher_session", { path: "/" });
   res.clearCookie("myfm_session", { path: "/" });
 }
 
 export function readSessionUserId(req: Request): string | null {
-  const raw = req.cookies?.myfm_session as string | undefined;
+  const raw =
+    (req.cookies?.song_matcher_session as string | undefined) ||
+    (req.cookies?.myfm_session as string | undefined);
   if (!raw) return null;
   const [payload, sig] = raw.split(".");
   if (!payload || !sig || sign(payload) !== sig) return null;

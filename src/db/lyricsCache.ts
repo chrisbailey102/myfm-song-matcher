@@ -73,3 +73,67 @@ export async function listLyricsForSpotifyIds(
   for (const r of rows) out.set(r.spotify_id, r);
   return out;
 }
+
+export type LyricSearchHit = {
+  spotify_id: string;
+  artist: string;
+  title: string;
+  source: string;
+  snippet: string;
+  match_ms: number | null;
+};
+
+/** Case-insensitive lyric search across a project's cached lyrics. */
+export async function searchProjectLyrics(
+  projectId: string,
+  q: string,
+  limit = 40,
+): Promise<LyricSearchHit[]> {
+  const needle = q.trim();
+  if (needle.length < 2) return [];
+  const rows = await query<{
+    spotify_id: string;
+    artist: string;
+    title: string;
+    source: string;
+    plain_text: string;
+    timed_json: string | null;
+  }>(
+    `SELECT l.spotify_id, s.artist, s.title, l.source, l.plain_text, l.timed_json
+     FROM lyrics_cache l
+     INNER JOIN songs s ON s.spotify_id_resolved = l.spotify_id
+     WHERE s.project_id = $1
+       AND l.plain_text ILIKE '%' || $2 || '%'
+     ORDER BY s.artist, s.title
+     LIMIT $3`,
+    [projectId, needle, limit],
+  );
+
+  const lower = needle.toLowerCase();
+  return rows.map((r) => {
+    const text = r.plain_text;
+    const idx = text.toLowerCase().indexOf(lower);
+    const start = Math.max(0, idx - 40);
+    const end = Math.min(text.length, idx + needle.length + 60);
+    let snippet = text.slice(start, end).replace(/\s+/g, " ").trim();
+    if (start > 0) snippet = "…" + snippet;
+    if (end < text.length) snippet = snippet + "…";
+
+    let match_ms: number | null = null;
+    const timed = parseTimedJson(r.timed_json);
+    for (const line of timed) {
+      if (line.text.toLowerCase().includes(lower)) {
+        match_ms = line.startMs;
+        break;
+      }
+    }
+    return {
+      spotify_id: r.spotify_id,
+      artist: r.artist,
+      title: r.title,
+      source: r.source,
+      snippet,
+      match_ms,
+    };
+  });
+}

@@ -4,6 +4,8 @@ export type CatalogRow = {
   year?: string;
   /** If set, enrichment skips search and uses this Spotify track id */
   spotify_id?: string;
+  /** ISRC from Spotify track external_ids (when known) */
+  isrc?: string;
 };
 
 export type EnrichedSong = CatalogRow & {
@@ -29,7 +31,7 @@ export type EnrichedSong = CatalogRow & {
   /** Filled after `myfm lyrics` */
   lyrics_source?: string;
   lyrics_fetched_at?: string;
-  /** spotify | getsongbpm — where BPM/key came from */
+  /** spotify | reccobeats | brizm | getsongbpm — where BPM/key came from */
   bpm_key_source?: string;
   /** Manual corrections (UI); used for pairing when set */
   tempo_override?: number | null;

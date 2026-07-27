@@ -1,12 +1,14 @@
-# MyFM Song Matcher
+# Song Matcher
 
 **Node 20+** web app + CLI for mashup research: import **Spotify playlists** (including private), enrich BPM/key, score harmonic + lyric pairs (with timed bridges), and **override BPM/Camelot** in the UI.
+
+Production URL (planned): **https://song-matcher.onthesly.com**
 
 ## Prerequisites
 
 - [Spotify Developer](https://developer.spotify.com/dashboard) app — Client ID + Secret, with **Redirect URI** set (see below).
 - **Postgres** — local via Docker, or Railway Postgres in production.
-- BPM/key: [ReccoBeats](https://reccobeats.com) is used automatically when Spotify audio-features returns 403 (no key). Optional [GetSongBPM](https://getsongbpm.com/api) as another fallback.
+- BPM/key: [ReccoBeats](https://reccobeats.com) is used automatically when Spotify audio-features returns 403 (no key). Optional [FreqBlog](https://freqblog.com/) / [Brizm](https://developers.brizm.dev/) fill gaps. Optional [GetSongBPM](https://getsongbpm.com/api) as another fallback.
 - Lyrics: [LRCLIB](https://lrclib.net) timed lyrics by default (no key). Optional [Genius](https://genius.com/api-clients) Client Access Token as fallback.
 
 ## Quick start (local)
@@ -20,7 +22,16 @@ npm install
 npm run dev
 ```
 
-Open **http://127.0.0.1:3847/** → **Connect Spotify** → paste a **private or public playlist URL** → **Import & enrich**.
+Open **http://127.0.0.1:3847/** → (if `APP_PASSWORD` is set, enter the site password) → **Connect Spotify** → paste a **private or public playlist URL** → **Import & enrich**.
+
+### Shared site auth (On The Sly)
+
+Dashboard (`dashboard.onthesly.com`) and Song Matcher share one password gate via a signed `site_auth` cookie on `.onthesly.com`.
+
+- Set the **same** `APP_PASSWORD` and `COOKIE_SECRET` on both Railway services.
+- Login once on either app unlocks both for 12 hours.
+- **Spotify Connect** is separate — still required for playlists/playback on Song Matcher.
+- Locally, omit `APP_PASSWORD` to skip the gate, or set it to test the password screen (host-only cookie; no cross-domain SSO on localhost).
 
 ### Spotify Dashboard → Redirect URIs
 
@@ -37,9 +48,13 @@ For Railway, also add your production URL (see Deploy section).
 | `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | API + OAuth |
 | `SPOTIFY_REDIRECT_URI` | Must match Dashboard |
 | `APP_BASE_URL` | e.g. `http://127.0.0.1:3847` |
-| `SESSION_SECRET` | 32+ random chars for login cookies |
+| `SESSION_SECRET` | 32+ random chars for Spotify login cookies |
+| `APP_PASSWORD` | Optional. Shared site password (same as dashboard). When set, unlocks the app before Spotify Connect |
+| `COOKIE_SECRET` | Optional. Signs the `site_auth` cookie — **must match dashboard** for cross-subdomain SSO |
 | `DATABASE_URL` | `postgresql://myfm:myfm@localhost:5432/myfm` (with `docker compose up -d db`) |
-| `GETSONGBPM_API_KEY` | BPM/key fallback |
+| `GETSONGBPM_API_KEY` | BPM/key fallback (often Cloudflare-blocked) |
+| `FREQBLOG_API_KEY` | BPM/key/energy when ReccoBeats misses ([freqblog.com](https://freqblog.com/)) |
+| `BRIZM_API_KEY` | Optional Brizm fallback (`tl_live_…` keys) |
 
 ## Excel format
 
@@ -95,9 +110,17 @@ npm run myfm -- all -i ./my-catalog.xlsx
 
 1. Create a new Railway project from this repo.
 2. Add a **PostgreSQL** plugin; Railway sets `DATABASE_URL` automatically.
-3. Set variables: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SESSION_SECRET`, `GETSONGBPM_API_KEY`, `APP_BASE_URL` (your Railway URL), `SPOTIFY_REDIRECT_URI` (`{APP_BASE_URL}/auth/spotify/callback`).
-4. Add the same redirect URI in the Spotify Developer Dashboard.
-5. Deploy — `railway.toml` runs `node dist/server.js` after Docker build.
+3. Attach custom domain **`song-matcher.onthesly.com`** to the service (Railway → Settings → Domains), and point DNS (CNAME) at Railway’s target.
+4. Set variables:
+   - `APP_BASE_URL=https://song-matcher.onthesly.com`
+   - `SPOTIFY_REDIRECT_URI=https://song-matcher.onthesly.com/auth/spotify/callback`
+   - `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SESSION_SECRET`
+   - `APP_PASSWORD` and `COOKIE_SECRET` — **same values as dashboard.onthesly.com** (shared site gate / SSO cookie)
+   - `FREQBLOG_API_KEY` (and optional Genius / GetSongBPM)
+5. In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), add that exact redirect URI (keep local ones for dev).
+6. Add colleagues as **authorized users** while the Spotify app is in Development Mode.
+7. Redeploy **dashboard** after its cookie-domain change so logins set `domain=.onthesly.com`.
+8. Deploy Song Matcher — `railway.toml` runs `node dist/server.js` after Docker build.
 
 ## Docker (app + Postgres)
 
@@ -108,10 +131,13 @@ docker compose up --build
 
 ## Data sources & compliance
 
-BPM and musical key data provided by [GetSongBPM](https://getsongbpm.com).
-
-- **Spotify** — track search works on new developer apps. **Audio Features (BPM/key) often return 403** for apps created after Nov 2024 ([Spotify blog](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api)). Set **`GETSONGBPM_API_KEY`** ([free at getsongbpm.com/api](https://getsongbpm.com/api)) in `.env` or `spotify-key.env` and MyFM will use that for tempo/Camelot instead.
+- **Spotify** — track search / playlists work on new developer apps. **Audio Features (BPM/key) return 403** for apps created after Nov 2024 ([Spotify blog](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api)). ISRCs from track metadata are still used for other lookups.
+- **ReccoBeats** — primary BPM/key/energy fallback by Spotify ID (no key).
+- **Brizm** — optional next fallback ([developers.brizm.dev](https://developers.brizm.dev/)); set `BRIZM_API_KEY`. Resolves by Spotify ID, ISRC, or artist+title (includes energy).
+- **GetSongBPM** — optional last resort for tempo/key ([getsongbpm.com/api](https://getsongbpm.com/api)); often Cloudflare-blocked from servers.
 - **Genius** — via the `genius-lyrics` package (scrapes lyric pages). Check [Genius API Terms](https://genius.com/static/terms) for your use case. Do **not** rely on Tunebat scraping (fragile / ToS risk); this tool does not implement it.
+
+Use **Fill missing BPM/key** in the UI to re-run the enrich chain for tracks that still lack tempo/Camelot.
 
 ## Project layout
 

@@ -30,7 +30,15 @@ export async function fetchGetSongBpmMeta(
     lookup,
     limit: "5",
   });
-  const res = await fetch(`https://api.getsongbpm.com/search/?${params.toString()}`);
+  let res: Response;
+  try {
+    res = await fetch(`https://api.getsongbpm.com/search/?${params.toString()}`, {
+      signal: AbortSignal.timeout(8_000),
+    });
+  } catch {
+    // Cloudflare / network hang — skip this title rather than stall the whole enrich
+    return null;
+  }
   if (!res.ok) return null;
   const data = (await res.json()) as { search?: GetSongBpmHit[] };
   const hits = data.search ?? [];

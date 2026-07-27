@@ -14,8 +14,8 @@ import { generatePairsFromCatalog, writePairCsv } from "./pairs.js";
 const program = new Command();
 
 program
-  .name("myfm")
-  .description("MyFM Song Matcher — enrich catalog, fetch lyrics, generate harmonic + lyric pair candidates.")
+  .name("song-matcher")
+  .description("Song Matcher — enrich catalog, fetch lyrics, generate harmonic + lyric pair candidates.")
   .version("0.1.0");
 
 program

@@ -5,6 +5,9 @@ import { optionalEnv, PROJECT_ROOT } from "../config.js";
 
 const { Pool } = pg;
 
+/** Keeps Song Matcher tables out of public (dashboard owns public.projects). */
+const SEARCH_PATH = "song_matcher";
+
 let pool: pg.Pool | null = null;
 
 export function getPool(): pg.Pool {
@@ -17,9 +20,13 @@ export function getPool(): pg.Pool {
     }
     pool = new Pool({
       connectionString: url,
+      connectionTimeoutMillis: 10_000,
       ssl: url.includes("localhost") || url.includes("127.0.0.1")
         ? undefined
         : { rejectUnauthorized: false },
+    });
+    pool.on("connect", (client) => {
+      void client.query(`SET search_path TO ${SEARCH_PATH}`);
     });
   }
   return pool;
@@ -29,8 +36,14 @@ export async function query<T extends pg.QueryResultRow = pg.QueryResultRow>(
   text: string,
   params?: unknown[],
 ): Promise<T[]> {
-  const res = await getPool().query<T>(text, params);
-  return res.rows;
+  const client = await getPool().connect();
+  try {
+    await client.query(`SET search_path TO ${SEARCH_PATH}`);
+    const res = await client.query<T>(text, params);
+    return res.rows;
+  } finally {
+    client.release();
+  }
 }
 
 export async function queryOne<T extends pg.QueryResultRow = pg.QueryResultRow>(
@@ -42,17 +55,22 @@ export async function queryOne<T extends pg.QueryResultRow = pg.QueryResultRow>(
 }
 
 export async function exec(text: string, params?: unknown[]): Promise<void> {
-  await getPool().query(text, params);
+  await query(text, params);
 }
 
 export async function migrate(): Promise<void> {
   const schemaPath = path.join(PROJECT_ROOT, "src", "db", "schema.sql");
   const sql = fs.readFileSync(schemaPath, "utf8");
-  await getPool().query(sql);
-  // Additive migrations for existing DBs created before new columns/tables
-  await getPool().query(`
-    ALTER TABLE songs ADD COLUMN IF NOT EXISTS lyrics_source TEXT DEFAULT '';
-  `);
+  const client = await getPool().connect();
+  try {
+    await client.query(sql);
+    // Additive migrations for existing DBs created before new columns/tables
+    await client.query(`
+      ALTER TABLE songs ADD COLUMN IF NOT EXISTS lyrics_source TEXT DEFAULT '';
+    `);
+  } finally {
+    client.release();
+  }
 }
 
 export function newId(): string {

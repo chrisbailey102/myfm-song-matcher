@@ -1,10 +1,11 @@
 {
-  "name": "myfm-song-matcher",
+  "name": "song-matcher",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Enrich a song catalog (Spotify key/BPM), find harmonic pair candidates, and score lyric bridges for short mashups.",
+  "description": "Song Matcher — enrich a catalog (BPM/key), find harmonic + lyric pair candidates for short mashups.",
   "bin": {
+    "song-matcher": "dist/cli.js",
     "myfm": "dist/cli.js"
   },
   "scripts": {

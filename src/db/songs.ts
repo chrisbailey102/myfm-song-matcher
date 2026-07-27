@@ -139,3 +139,49 @@ export async function updateSongOverrides(
   );
   return getSongById(id);
 }
+
+export async function updateSongAudioMetaBySpotifyId(
+  spotifyId: string,
+  meta: {
+    tempo: number;
+    camelot: string;
+    spotify_key: number;
+    spotify_mode: number;
+    time_signature: number;
+    energy: number;
+    danceability: number;
+    bpm_key_source: string;
+  },
+): Promise<void> {
+  await exec(
+    `UPDATE songs SET
+      tempo = CASE WHEN $1::real > 0 THEN $1::real ELSE tempo END,
+      camelot = CASE WHEN $2 <> '' THEN $2 ELSE camelot END,
+      spotify_key = CASE WHEN $3::int >= 0 THEN $3::int ELSE spotify_key END,
+      spotify_mode = CASE WHEN $4::int >= 0 THEN $4::int ELSE spotify_mode END,
+      time_signature = CASE WHEN $5::int > 0 THEN $5::int ELSE time_signature END,
+      energy = CASE WHEN $6::real > 0 THEN $6::real ELSE energy END,
+      danceability = CASE WHEN $7::real > 0 THEN $7::real ELSE danceability END,
+      bpm_key_source = CASE WHEN $8 <> '' THEN $8 ELSE bpm_key_source END,
+      needs_review = CASE
+        WHEN (CASE WHEN $1::real > 0 THEN $1::real ELSE tempo END) > 0
+         AND (CASE WHEN $2 <> '' THEN $2 ELSE camelot END) <> ''
+        THEN false
+        ELSE needs_review
+      END,
+      updated_at = $9
+    WHERE spotify_id_resolved = $10`,
+    [
+      meta.tempo,
+      meta.camelot,
+      meta.spotify_key,
+      meta.spotify_mode,
+      meta.time_signature,
+      meta.energy,
+      meta.danceability,
+      meta.bpm_key_source,
+      now(),
+      spotifyId,
+    ],
+  );
+}

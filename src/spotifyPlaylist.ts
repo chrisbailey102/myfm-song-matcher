@@ -9,26 +9,54 @@ export function parsePlaylistId(urlOrId: string): string {
   throw new Error("Invalid Spotify playlist URL or ID.");
 }
 
-type PlaylistTrackItem = {
-  track: {
-    id: string;
-    name: string;
-    duration_ms: number;
-    popularity: number;
-    external_urls: { spotify: string };
-    artists: { name: string }[];
-    album: { release_date: string };
-  } | null;
+/** Spotify Dev Mode (Feb 2026+): playlist rows use `item`; older/extended apps use `track`. */
+type PlaylistTrack = {
+  id: string;
+  name: string;
+  type?: string;
+  duration_ms?: number;
+  popularity?: number;
+  external_urls?: { spotify?: string };
+  external_ids?: { isrc?: string };
+  artists?: { name: string }[];
+  album?: { release_date?: string };
+};
+
+type PlaylistItemRow = {
+  track?: PlaylistTrack | null;
+  item?: PlaylistTrack | null;
+};
+
+type PlaylistPaging = {
+  items: PlaylistItemRow[];
+  next: string | null;
+  total?: number;
 };
 
 type PlaylistResponse = {
   name: string;
   external_urls: { spotify: string };
-  tracks: {
-    items: PlaylistTrackItem[];
-    next: string | null;
-  };
+  /** Pre-2026 field name */
+  tracks?: PlaylistPaging;
+  /** Post-2026 Dev Mode field name */
+  items?: PlaylistPaging;
 };
+
+function playlistItemAsTrack(row: PlaylistItemRow): PlaylistTrack | null {
+  const t = row.item ?? row.track ?? null;
+  if (!t?.id) return null;
+  if (t.type && t.type !== "track") return null;
+  return t;
+}
+
+function forbiddenPlaylistMessage(status: number, body: string): string {
+  if (status !== 403) return `Playlist tracks failed: ${status} ${body}`;
+  return (
+    "Spotify forbids reading this playlist’s tracks (HTTP 403). " +
+    "Since Feb 2026, Development Mode apps can only load playlists you own or collaborate on " +
+    "(use /playlists/{id}/items). Paste one of your own playlists, or use Excel upload for other catalogs."
+  );
+}
 
 export async function fetchPlaylistMeta(
   accessToken: string,
@@ -37,7 +65,11 @@ export async function fetchPlaylistMeta(
   const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!res.ok) throw new Error(`Playlist fetch failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 403) throw new Error(forbiddenPlaylistMessage(res.status, body));
+    throw new Error(`Playlist fetch failed: ${res.status} ${body}`);
+  }
   const p = (await res.json()) as PlaylistResponse;
   return {
     id: playlistId,
@@ -51,31 +83,37 @@ export async function fetchPlaylistTracks(
   playlistId: string,
 ): Promise<CatalogRow[]> {
   const rows: CatalogRow[] = [];
+  // Feb 2026: /tracks removed for Dev Mode → use /items
   let url: string | null =
-    `https://api.spotify.com/v1/playlists/${playlistId}/tracks?limit=50&market=US`;
+    `https://api.spotify.com/v1/playlists/${playlistId}/items?limit=50&market=US&additional_types=track`;
 
   while (url) {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    if (!res.ok) throw new Error(`Playlist tracks failed: ${res.status} ${await res.text()}`);
-    const data = (await res.json()) as PlaylistResponse["tracks"] & { name?: string };
-    for (const item of data.items) {
-      const t = item.track;
-      if (!t?.id) continue;
+    if (!res.ok) {
+      throw new Error(forbiddenPlaylistMessage(res.status, await res.text()));
+    }
+    const data = (await res.json()) as PlaylistPaging;
+    for (const item of data.items ?? []) {
+      const t = playlistItemAsTrack(item);
+      if (!t) continue;
       const year = t.album?.release_date?.slice(0, 4);
       rows.push({
-        artist: t.artists.map((a) => a.name).join("; "),
+        artist: (t.artists ?? []).map((a) => a.name).join("; "),
         title: t.name,
         year: year || undefined,
         spotify_id: t.id,
+        isrc: t.external_ids?.isrc?.trim() || undefined,
       });
     }
     url = data.next;
   }
 
   if (rows.length === 0) {
-    throw new Error("Playlist has no playable tracks.");
+    throw new Error(
+      "Playlist has no playable tracks (or Spotify withheld items — only owned/collaborative playlists return contents).",
+    );
   }
   return rows;
 }
@@ -102,7 +140,8 @@ export async function fetchUserPlaylists(
         id: string;
         name: string;
         external_urls: { spotify: string };
-        tracks: { total: number };
+        tracks?: { total: number };
+        items?: { total: number };
       }>;
       next: string | null;
     };
@@ -111,7 +150,7 @@ export async function fetchUserPlaylists(
         id: p.id,
         name: p.name,
         url: p.external_urls.spotify,
-        track_count: p.tracks.total,
+        track_count: p.items?.total ?? p.tracks?.total ?? 0,
       });
       if (out.length >= limit) break;
     }

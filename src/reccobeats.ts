@@ -44,7 +44,7 @@ export async function fetchReccoBeatsFeatures(
         headers: {
           Accept: "application/json",
           "User-Agent":
-            "MyFMSongMatcher/0.1 (+https://github.com/chrisbailey102/myfm-song-matcher)",
+            "SongMatcher/0.1 (+https://github.com/chrisbailey102/myfm-song-matcher)",
         },
       },
     );
@@ -57,7 +57,7 @@ export async function fetchReccoBeatsFeatures(
       if (!id) continue;
       const key = af.key ?? -1;
       const mode = af.mode ?? -1;
-      const tempo = Number(af.tempo) || 0;
+      const tempo = Math.round(Number(af.tempo) || 0);
       if (!tempo) continue;
       const camelot =
         key >= 0 && key <= 11 && (mode === 0 || mode === 1)

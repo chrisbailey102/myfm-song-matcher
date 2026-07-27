@@ -196,6 +196,7 @@ export async function enrichCatalog(
   }
   const audioMeta = await resolveTrackAudioMeta(resolved, (msg) => {
     console.error(msg);
+    onProgress?.(rows.length, rows.length, msg);
   });
   return resolved.map(({ row, track, needs_review, review_reason, match_confidence }) => {
     const meta = audioMeta.get(track.id);
@@ -203,8 +204,10 @@ export async function enrichCatalog(
     const mode = meta?.spotify_mode ?? -1;
     const camelot = meta?.camelot ?? "";
     const noBpm = !meta?.tempo;
+    const isrc = track.external_ids?.isrc?.trim() || row.isrc;
     return {
       ...row,
+      isrc,
       spotify_id_resolved: track.id,
       spotify_url: track.external_urls?.spotify ?? "",
       spotify_name: track.name,

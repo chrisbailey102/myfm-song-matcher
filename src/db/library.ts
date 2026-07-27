@@ -39,8 +39,8 @@ export async function upsertLibraryFromEnriched(
         popularity = EXCLUDED.popularity,
         tempo = CASE WHEN EXCLUDED.tempo > 0 THEN EXCLUDED.tempo ELSE library_tracks.tempo END,
         camelot = CASE WHEN EXCLUDED.camelot <> '' THEN EXCLUDED.camelot ELSE library_tracks.camelot END,
-        energy = EXCLUDED.energy,
-        danceability = EXCLUDED.danceability,
+        energy = CASE WHEN EXCLUDED.energy > 0 THEN EXCLUDED.energy ELSE library_tracks.energy END,
+        danceability = CASE WHEN EXCLUDED.danceability > 0 THEN EXCLUDED.danceability ELSE library_tracks.danceability END,
         bpm_key_source = CASE WHEN EXCLUDED.bpm_key_source <> '' THEN EXCLUDED.bpm_key_source ELSE library_tracks.bpm_key_source END,
         lyrics_source = CASE WHEN EXCLUDED.lyrics_source <> '' THEN EXCLUDED.lyrics_source ELSE library_tracks.lyrics_source END,
         last_seen_at = EXCLUDED.last_seen_at`,
@@ -66,7 +66,53 @@ export async function upsertLibraryFromEnriched(
 
 export async function listLibraryTracks(): Promise<LibraryTrack[]> {
   return query<LibraryTrack>(
-    `SELECT * FROM library_tracks ORDER BY last_seen_at DESC`,
+    `SELECT * FROM library_tracks ORDER BY artist ASC, title ASC`,
+  );
+}
+
+export async function countLibraryTracks(): Promise<number> {
+  const rows = await query<{ n: number }>(
+    `SELECT COUNT(*)::int AS n FROM library_tracks`,
+  );
+  return rows[0]?.n ?? 0;
+}
+
+export async function listLibraryTracksMissingMeta(): Promise<LibraryTrack[]> {
+  return query<LibraryTrack>(
+    `SELECT * FROM library_tracks
+     WHERE tempo = 0 OR tempo IS NULL OR camelot = '' OR camelot IS NULL
+     ORDER BY artist ASC, title ASC`,
+  );
+}
+
+export async function updateLibraryAudioMeta(
+  spotifyId: string,
+  meta: {
+    tempo: number;
+    camelot: string;
+    energy: number;
+    danceability: number;
+    bpm_key_source: string;
+  },
+): Promise<void> {
+  await exec(
+    `UPDATE library_tracks SET
+      tempo = CASE WHEN $1::real > 0 THEN $1::real ELSE tempo END,
+      camelot = CASE WHEN $2 <> '' THEN $2 ELSE camelot END,
+      energy = CASE WHEN $3::real > 0 THEN $3::real ELSE energy END,
+      danceability = CASE WHEN $4::real > 0 THEN $4::real ELSE danceability END,
+      bpm_key_source = CASE WHEN $5 <> '' THEN $5 ELSE bpm_key_source END,
+      last_seen_at = $6
+    WHERE spotify_id = $7`,
+    [
+      meta.tempo,
+      meta.camelot,
+      meta.energy,
+      meta.danceability,
+      meta.bpm_key_source,
+      now(),
+      spotifyId,
+    ],
   );
 }
 

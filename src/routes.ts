@@ -5,16 +5,19 @@ import fs from "node:fs";
 import path from "node:path";
 import { parse } from "csv-parse/sync";
 import { assertSpotifyConfigured, PROJECT_ROOT } from "./config.js";
+import { getEnrichJob, startEnrichJob } from "./enrichJobs.js";
 import {
-  readCatalogFromBuffer,
-  enrichCatalog,
-  enrichedSongsToCsvString,
-} from "./catalog.js";
+  getMetaBackfillJob,
+  startLibraryMetaBackfill,
+  startProjectMetaBackfill,
+} from "./metaBackfill.js";
 import { createJob, getJobById, listJobsForProject } from "./db/jobs.js";
 import {
   createProject,
+  deleteProject,
   getProjectById,
-  listProjectsForUser,
+  listProjectsWithCounts,
+  updateProjectName,
 } from "./db/projects.js";
 import { listSongsForProject, updateSongOverrides } from "./db/songs.js";
 import {
@@ -32,6 +35,14 @@ import {
   fetchUserPlaylists,
   parsePlaylistId,
 } from "./spotifyPlaylist.js";
+import {
+  fetchTrackPreviewUrl,
+  pauseSpotifyPlayback,
+  spotifyOpenUrl,
+  startSpotifyPlayback,
+} from "./spotifyPlayback.js";
+import { searchProjectLyrics } from "./db/lyricsCache.js";
+import { resetCatalogData } from "./db/reset.js";
 import { getProjectPairs } from "./worker.js";
 import type { DbUser } from "./db/users.js";
 
@@ -128,9 +139,124 @@ export function registerRoutes(app: Express): void {
     }
   });
 
+  /** Play on user's active Spotify device (Premium), optional seek for lyric bridges. */
+  app.post("/api/spotify/play", requireAuth, async (req, res) => {
+    try {
+      const { spotifyId, positionMs } = req.body as {
+        spotifyId?: string;
+        positionMs?: number;
+      };
+      if (!spotifyId?.trim()) {
+        res.status(400).json({ error: "spotifyId required" });
+        return;
+      }
+      const token = await ensureUserAccessToken(authed(req));
+      const ms = Number(positionMs) || 0;
+      try {
+        await startSpotifyPlayback(token, spotifyId.trim(), ms);
+        res.json({ ok: true, mode: "device", openUrl: spotifyOpenUrl(spotifyId.trim(), ms) });
+      } catch (playErr) {
+        const preview = await fetchTrackPreviewUrl(token, spotifyId.trim());
+        const msg = playErr instanceof Error ? playErr.message : String(playErr);
+        const needsReauth =
+          playErr instanceof Error &&
+          ((playErr as Error & { code?: string }).code === "needs_reauth" ||
+            /permissions missing|401/i.test(msg));
+        res.status(200).json({
+          ok: false,
+          mode: preview ? "preview" : "open",
+          previewUrl: preview,
+          openUrl: spotifyOpenUrl(spotifyId.trim(), ms),
+          needsReauth,
+          error: msg,
+        });
+      }
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  app.post("/api/spotify/pause", requireAuth, async (req, res) => {
+    try {
+      const token = await ensureUserAccessToken(authed(req));
+      await pauseSpotifyPlayback(token);
+      res.json({ ok: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const needsReauth =
+        e instanceof Error &&
+        ((e as Error & { code?: string }).code === "needs_reauth" ||
+          /permissions missing|401/i.test(msg));
+      res.status(400).json({ error: msg, needsReauth });
+    }
+  });
+
+  app.get("/api/spotify/preview/:spotifyId", requireAuth, async (req, res) => {
+    try {
+      const token = await ensureUserAccessToken(authed(req));
+      const previewUrl = await fetchTrackPreviewUrl(token, req.params.spotifyId);
+      res.json({
+        previewUrl,
+        openUrl: spotifyOpenUrl(req.params.spotifyId, 0),
+      });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
   app.get("/api/projects", requireAuth, async (req, res) => {
-    const projects = await listProjectsForUser(authed(req).id);
+    const projects = await listProjectsWithCounts(authed(req).id);
     res.json({ projects });
+  });
+
+  app.patch("/api/projects/:id", requireAuth, async (req, res) => {
+    try {
+      const project = await getProjectById(req.params.id);
+      if (!project || project.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Playlist not found" });
+        return;
+      }
+      const { name } = req.body as { name?: string };
+      if (!name?.trim()) {
+        res.status(400).json({ error: "Name required" });
+        return;
+      }
+      const updated = await updateProjectName(project.id, name);
+      res.json({ project: updated });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  app.delete("/api/projects/:id", requireAuth, async (req, res) => {
+    try {
+      const project = await getProjectById(req.params.id);
+      if (!project || project.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Playlist not found" });
+        return;
+      }
+      await deleteProject(project.id);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  /** Wipe all playlists, library tracks, lyrics cache, and jobs (keeps Spotify login). */
+  app.post("/api/settings/reset-data", requireAuth, async (req, res) => {
+    try {
+      const confirm = String((req.body as { confirm?: string })?.confirm || "");
+      if (confirm !== "DELETE ALL") {
+        res.status(400).json({
+          error: 'Confirmation required: send { "confirm": "DELETE ALL" }',
+        });
+        return;
+      }
+      const deleted = await resetCatalogData();
+      res.json({ ok: true, deleted });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
   });
 
   app.post("/api/projects", requireAuth, async (req, res) => {
@@ -225,11 +351,123 @@ export function registerRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/projects/:id/lyrics/search", requireAuth, async (req, res) => {
+    try {
+      const project = await getProjectById(req.params.id);
+      if (!project || project.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const hits = await searchProjectLyrics(project.id, q);
+      res.json({ hits, count: hits.length, q });
+    } catch (e) {
+      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
   app.get("/api/library", requireAuth, async (_req, res) => {
     try {
-      const { listLibraryTracks } = await import("./db/library.js");
+      const { listLibraryTracks, countLibraryTracks } = await import("./db/library.js");
       const tracks = await listLibraryTracks();
-      res.json({ tracks, count: tracks.length });
+      const count = await countLibraryTracks();
+      const songs = tracks.map((t) => ({
+        id: `lib:${t.spotify_id}`,
+        artist: t.artist,
+        title: t.title,
+        tempo: t.tempo,
+        tempo_override: null,
+        camelot: t.camelot,
+        camelot_override: null,
+        energy: t.energy,
+        spotify_id_resolved: t.spotify_id,
+        spotify_url: t.spotify_url,
+        needs_review: false,
+        bpm_key_source: t.bpm_key_source,
+        year: t.year,
+      }));
+      res.json({ tracks, songs, count });
+    } catch (e) {
+      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  app.post("/api/library/backfill-meta", requireAuth, async (_req, res) => {
+    const job = startLibraryMetaBackfill();
+    res.json({ job });
+  });
+
+  app.post("/api/projects/:id/backfill-meta", requireAuth, async (req, res) => {
+    const project = await getProjectById(req.params.id);
+    if (!project || project.user_id !== authed(req).id) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    const job = startProjectMetaBackfill(project.id);
+    res.json({ job });
+  });
+
+  app.get("/api/backfill-meta/:jobId", requireAuth, (req, res) => {
+    const job = getMetaBackfillJob(req.params.jobId);
+    if (!job) {
+      res.status(404).json({ error: "Job not found" });
+      return;
+    }
+    res.json({ job });
+  });
+
+  app.get("/api/library/lyrics/search", requireAuth, async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q : "";
+      const needle = q.trim();
+      if (needle.length < 2) {
+        res.json({ hits: [], count: 0, q });
+        return;
+      }
+      const { query } = await import("./db/index.js");
+      const { parseTimedJson } = await import("./db/lyricsCache.js");
+      const rows = await query<{
+        spotify_id: string;
+        artist: string;
+        title: string;
+        source: string;
+        plain_text: string;
+        timed_json: string | null;
+      }>(
+        `SELECT l.spotify_id, t.artist, t.title, l.source, l.plain_text, l.timed_json
+         FROM lyrics_cache l
+         INNER JOIN library_tracks t ON t.spotify_id = l.spotify_id
+         WHERE l.plain_text ILIKE '%' || $1 || '%'
+         ORDER BY t.artist, t.title
+         LIMIT 40`,
+        [needle],
+      );
+      const lower = needle.toLowerCase();
+      const hits = rows.map((r) => {
+        const text = r.plain_text;
+        const idx = text.toLowerCase().indexOf(lower);
+        const start = Math.max(0, idx - 40);
+        const end = Math.min(text.length, idx + needle.length + 60);
+        let snippet = text.slice(start, end).replace(/\s+/g, " ").trim();
+        if (start > 0) snippet = "…" + snippet;
+        if (end < text.length) snippet = snippet + "…";
+        let match_ms: number | null = null;
+        for (const line of parseTimedJson(r.timed_json)) {
+          if (line.text.toLowerCase().includes(lower)) {
+            match_ms = line.startMs;
+            break;
+          }
+        }
+        return {
+          spotify_id: r.spotify_id,
+          artist: r.artist,
+          title: r.title,
+          source: r.source,
+          snippet,
+          match_ms,
+        };
+      });
+      res.json({ hits, count: hits.length, q });
     } catch (e) {
       res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
     }
@@ -249,7 +487,7 @@ export function registerRoutes(app: Express): void {
     res.json({ job });
   });
 
-  /** Legacy Excel enrich (no login required) */
+  /** Legacy Excel enrich (no login) — async job with progress polling */
   app.post("/api/enrich", upload.single("file"), async (req, res) => {
     try {
       assertSpotifyConfigured();
@@ -257,20 +495,35 @@ export function registerRoutes(app: Express): void {
         res.status(400).json({ error: "No file received. Choose a .xlsx and try again." });
         return;
       }
-      const rows = readCatalogFromBuffer(req.file.buffer);
-      const enriched = await enrichCatalog(rows, (i, t, label) => {
-        console.error(`[enrich UI ${i}/${t}] ${label}`);
-      });
-      const csv = enrichedSongsToCsvString(enriched);
-      const outDir = path.join(PROJECT_ROOT, "out");
-      fs.mkdirSync(outDir, { recursive: true });
-      fs.writeFileSync(path.join(outDir, "catalog_enriched.csv"), csv, "utf8");
-      res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", 'attachment; filename="catalog_enriched.csv"');
-      res.send(csv);
+      const job = startEnrichJob(req.file.buffer);
+      res.json({ jobId: job.id, job });
     } catch (e) {
       res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
     }
+  });
+
+  app.get("/api/enrich/:jobId", (req, res) => {
+    const job = getEnrichJob(req.params.jobId);
+    if (!job) {
+      res.status(404).json({ error: "Enrich job not found (server may have restarted)." });
+      return;
+    }
+    res.json({ job });
+  });
+
+  app.get("/api/enrich/:jobId/csv", (req, res) => {
+    const job = getEnrichJob(req.params.jobId);
+    if (!job) {
+      res.status(404).json({ error: "Enrich job not found." });
+      return;
+    }
+    if (job.status !== "done" || !job.csv_path || !fs.existsSync(job.csv_path)) {
+      res.status(409).json({ error: job.error || "CSV not ready yet." });
+      return;
+    }
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="catalog_enriched.csv"');
+    res.send(fs.readFileSync(job.csv_path, "utf8"));
   });
 
   app.get("/api/catalog", (_req, res) => {

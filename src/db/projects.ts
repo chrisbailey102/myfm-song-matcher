@@ -51,6 +51,44 @@ export async function listProjectsForUser(userId: string): Promise<DbProject[]> 
   );
 }
 
+export type ProjectWithCount = DbProject & { song_count: number };
+
+export async function listProjectsWithCounts(
+  userId: string,
+): Promise<ProjectWithCount[]> {
+  return query<ProjectWithCount>(
+    `SELECT p.*, COALESCE(c.cnt, 0)::int AS song_count
+     FROM projects p
+     LEFT JOIN (
+       SELECT project_id, COUNT(*)::int AS cnt FROM songs GROUP BY project_id
+     ) c ON c.project_id = p.id
+     WHERE p.user_id = $1
+     ORDER BY p.updated_at DESC`,
+    [userId],
+  );
+}
+
+export async function updateProjectName(
+  id: string,
+  name: string,
+): Promise<DbProject | null> {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  await exec(`UPDATE projects SET name = $1, updated_at = $2 WHERE id = $3`, [
+    trimmed,
+    now(),
+    id,
+  ]);
+  return getProjectById(id);
+}
+
+export async function deleteProject(id: string): Promise<boolean> {
+  const existing = await getProjectById(id);
+  if (!existing) return false;
+  await exec(`DELETE FROM projects WHERE id = $1`, [id]);
+  return true;
+}
+
 export async function updateProjectStatus(id: string, status: string): Promise<void> {
   await exec(`UPDATE projects SET status = $1, updated_at = $2 WHERE id = $3`, [
     status,

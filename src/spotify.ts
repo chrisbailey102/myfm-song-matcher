@@ -57,6 +57,7 @@ export type SpotifyTrack = {
   popularity: number;
   external_urls: { spotify: string };
   artists: { name: string }[];
+  external_ids?: { isrc?: string };
 };
 
 export type SpotifySearchResponse = {

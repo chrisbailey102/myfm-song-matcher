@@ -1,17 +1,39 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import path from "node:path";
-import { getUiPort, PROJECT_ROOT } from "./config.js";
+import { getUiPort, optionalEnv, PROJECT_ROOT } from "./config.js";
 import { migrate } from "./db/index.js";
 import { registerRoutes } from "./routes.js";
 import { startJobWorker } from "./worker.js";
 import { getAppBaseUrl } from "./spotifyAuth.js";
+import { registerSiteAuthRoutes, requireSiteAuth } from "./siteAuth.js";
 
 const app = express();
 const root = PROJECT_ROOT;
 
-app.use(cookieParser());
+const cookieSecret =
+  optionalEnv("COOKIE_SECRET")?.trim() ||
+  optionalEnv("APP_PASSWORD")?.trim() ||
+  optionalEnv("SESSION_SECRET")?.trim() ||
+  "change-me";
+
+app.use(cookieParser(cookieSecret));
 app.use(express.json({ limit: "1mb" }));
+
+registerSiteAuthRoutes(app);
+
+app.use((req, res, next) => {
+  if (!req.path.startsWith("/api/")) {
+    next();
+    return;
+  }
+  if (req.path === "/api/health" || req.path.startsWith("/api/site-auth")) {
+    next();
+    return;
+  }
+  requireSiteAuth(req, res, next);
+});
+
 app.use(express.static(path.join(root, "public")));
 
 registerRoutes(app);
@@ -33,15 +55,27 @@ app.use(
 );
 
 async function main(): Promise<void> {
-  await migrate();
-  startJobWorker();
   const port = getUiPort();
   const host = process.env.HOST ?? "0.0.0.0";
-  const server = app.listen(port, host, () => {
-    console.error(`MyFM Song Matcher: ${getAppBaseUrl()}/`);
-    console.error(`Listening on ${host}:${port}`);
+  console.error(
+    `Starting Song Matcher (PORT=${port}, DATABASE_URL=${process.env.DATABASE_URL ? "set" : "MISSING"})`,
+  );
+
+  // Bind immediately so Railway healthchecks succeed even if migrate is slow.
+  await new Promise<void>((resolve, reject) => {
+    const server = app.listen(port, host, () => {
+      console.error(`Song Matcher: ${getAppBaseUrl()}/`);
+      console.error(`Listening on ${host}:${port}`);
+      resolve();
+    });
+    server.on("error", reject);
+    server.setTimeout(20 * 60 * 1000);
   });
-  server.setTimeout(20 * 60 * 1000);
+
+  console.error("Running DB migrate…");
+  await migrate();
+  console.error("Migrate complete");
+  startJobWorker();
 }
 
 main().catch((e) => {
