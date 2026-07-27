@@ -1,0 +1,75 @@
+import { exec, now, query, queryOne } from "./index.js";
+import type { TimedLine } from "../lrclib.js";
+
+export type LyricsCacheRow = {
+  spotify_id: string;
+  artist: string | null;
+  title: string | null;
+  source: string;
+  plain_text: string;
+  timed_json: string | null;
+  fetched_at: number;
+};
+
+export async function getLyricsCache(
+  spotifyId: string,
+): Promise<LyricsCacheRow | null> {
+  return queryOne<LyricsCacheRow>(
+    `SELECT * FROM lyrics_cache WHERE spotify_id = $1`,
+    [spotifyId],
+  );
+}
+
+export async function upsertLyricsCache(input: {
+  spotify_id: string;
+  artist: string;
+  title: string;
+  source: string;
+  plain_text: string;
+  timed_lines: TimedLine[];
+}): Promise<void> {
+  const timed_json =
+    input.timed_lines.length > 0 ? JSON.stringify(input.timed_lines) : null;
+  await exec(
+    `INSERT INTO lyrics_cache (spotify_id, artist, title, source, plain_text, timed_json, fetched_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (spotify_id) DO UPDATE SET
+       artist = EXCLUDED.artist,
+       title = EXCLUDED.title,
+       source = EXCLUDED.source,
+       plain_text = EXCLUDED.plain_text,
+       timed_json = EXCLUDED.timed_json,
+       fetched_at = EXCLUDED.fetched_at`,
+    [
+      input.spotify_id,
+      input.artist,
+      input.title,
+      input.source,
+      input.plain_text,
+      timed_json,
+      now(),
+    ],
+  );
+}
+
+export function parseTimedJson(raw: string | null): TimedLine[] {
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw) as TimedLine[];
+  } catch {
+    return [];
+  }
+}
+
+export async function listLyricsForSpotifyIds(
+  ids: string[],
+): Promise<Map<string, LyricsCacheRow>> {
+  const out = new Map<string, LyricsCacheRow>();
+  if (!ids.length) return out;
+  const rows = await query<LyricsCacheRow>(
+    `SELECT * FROM lyrics_cache WHERE spotify_id = ANY($1::text[])`,
+    [ids],
+  );
+  for (const r of rows) out.set(r.spotify_id, r);
+  return out;
+}

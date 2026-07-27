@@ -109,6 +109,31 @@
             <button type="button" id="btn-load-pairs">Show pair candidates</button>
             <button type="button" id="btn-export-csv" class="secondary">Download songs CSV</button>
           </div>
+          <div class="panel" style="margin-top:0.75rem;background:#12151a">
+            <h2 style="margin-top:0">Pair filters</h2>
+            <div class="row">
+              <label>Scope</label>
+              <select id="pair-mode">
+                <option value="playlist">Playlist only</option>
+                <option value="expand">Expand to library</option>
+              </select>
+              <label>BPM ±</label>
+              <input type="number" id="flt-bpm" value="10" style="width:4rem" />
+              <label>Min lyric</label>
+              <input type="number" id="flt-lyric" value="0" step="0.1" min="0" max="1" style="width:4rem" />
+              <label>Min harmonic</label>
+              <input type="number" id="flt-harm" value="0" step="0.1" min="0" max="1" style="width:4rem" />
+            </div>
+            <div class="row">
+              <label>Camelot</label>
+              <input type="text" id="flt-camelot" placeholder="e.g. 8B" style="width:4rem" />
+              <label>Year</label>
+              <input type="number" id="flt-year-min" placeholder="from" style="width:5rem" />
+              <input type="number" id="flt-year-max" placeholder="to" style="width:5rem" />
+              <label><input type="checkbox" id="flt-bridge" /> Require lyric bridge</label>
+            </div>
+            <p class="hint">Library mode matches this playlist’s songs against tracks remembered from past projects.</p>
+          </div>
         </div>
         <h2>Songs <span class="hint">(edit BPM / Camelot overrides — saved automatically)</span></h2>
         <div class="wrap" id="songs-table"></div>
@@ -286,16 +311,28 @@
       }
 
       $("btn-load-pairs").onclick = async () => {
-        const { pairs } = await api(`/api/projects/${currentProjectId}/pairs`);
+        const params = new URLSearchParams({
+          mode: $("pair-mode").value,
+          bpmTolerance: $("flt-bpm").value || "10",
+          minLyricScore: $("flt-lyric").value || "0",
+          minHarmonicScore: $("flt-harm").value || "0",
+          maxResults: "300",
+        });
+        if ($("flt-camelot").value.trim()) params.set("camelot", $("flt-camelot").value.trim());
+        if ($("flt-year-min").value) params.set("yearMin", $("flt-year-min").value);
+        if ($("flt-year-max").value) params.set("yearMax", $("flt-year-max").value);
+        if ($("flt-bridge").checked) params.set("requireBridge", "1");
+        $("pairs-table").innerHTML = "<p class='hint'>Loading pairs…</p>";
+        const { pairs, mode } = await api(`/api/projects/${currentProjectId}/pairs?${params}`);
         if (!pairs.length) {
-          $("pairs-table").innerHTML = "<p class='hint'>No pairs (need BPM + Camelot on songs).</p>";
+          $("pairs-table").innerHTML = "<p class='hint'>No pairs match these filters (need BPM + Camelot; try widening BPM or lowering min lyric).</p>";
           return;
         }
         const show = pairs.slice(0, 200);
-        const cols = Object.keys(show[0]);
-        $("pairs-table").innerHTML = `<table><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${
+        const cols = ["song_a_artist","song_a_title","song_b_artist","song_b_title","bpm_delta","key_relationship","harmonic_score","lyric_score","bridge_phrases"];
+        $("pairs-table").innerHTML = `<p class="hint">Mode: ${esc(mode)} — showing ${show.length} of ${pairs.length}</p><table><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${
           show.map((r) => `<tr>${cols.map((c) => `<td>${esc(r[c])}</td>`).join("")}</tr>`).join("")
-        }</tbody></table><p class="hint">Showing top ${show.length} of ${pairs.length}</p>`;
+        }</tbody></table>`;
       };
 
       $("btn-export-csv").onclick = async () => {

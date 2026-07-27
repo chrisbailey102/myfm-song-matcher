@@ -1,6 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
-import { stringify } from "csv-stringify/sync";
 import type { EnrichedSong, PairCandidate } from "./types.js";
 import {
   harmonicComponent,
@@ -9,74 +6,208 @@ import {
   bpmClosenessScore,
 } from "./camelot.js";
 import { getBpmTolerance, getMaxPairs } from "./config.js";
-import { readLyricsFile, scoreLyricPair } from "./lyrics.js";
+import { scoreLyricPair } from "./lyrics.js";
+import type { TimedLine } from "./lrclib.js";
+import fs from "node:fs";
+import path from "node:path";
+import { stringify } from "csv-stringify/sync";
 
-export type PairGenOptions = {
-  songs: EnrichedSong[];
-  lyricsDir?: string;
-  /** If false, skip lyric IO and set lyric_score 0 */
-  withLyrics: boolean;
+export type LyricBundle = {
+  text: string;
+  timed: TimedLine[];
 };
 
-export function generatePairCandidates(opts: PairGenOptions): PairCandidate[] {
-  const { songs, lyricsDir, withLyrics } = opts;
-  const maxPairs = getMaxPairs();
-  const bpmTol = getBpmTolerance();
-  const out: PairCandidate[] = [];
-  const n = songs.length;
+export type PairFilters = {
+  bpmTolerance?: number;
+  minLyricScore?: number;
+  minHarmonicScore?: number;
+  requireBridge?: boolean;
+  camelot?: string;
+  yearMin?: number;
+  yearMax?: number;
+  maxResults?: number;
+};
 
-  for (let i = 0; i < n; i++) {
-    for (let j = i + 1; j < n; j++) {
-      if (out.length >= maxPairs) return sortPairs(out);
-      const a = songs[i];
-      const b = songs[j];
-      if (!a.camelot || !b.camelot) continue;
-      if (!a.tempo || !b.tempo) continue;
-      const bpmDelta = Math.abs(a.tempo - b.tempo);
-      if (bpmDelta > bpmTol) continue;
-      if (!isMikCompatible(a.camelot, b.camelot)) continue;
+export type PairGenOptions = {
+  /** Left side / seed songs (always from the active playlist/project) */
+  seeds: EnrichedSong[];
+  /**
+   * Right side pool. Same as seeds for playlist-only;
+   * library tracks (possibly excluding seeds) for expand-library.
+   */
+  pool: EnrichedSong[];
+  /** spotify_id → lyrics */
+  lyricsById?: Map<string, LyricBundle>;
+  withLyrics: boolean;
+  /** If true, only seed→pool directed pairs (no seed↔seed unless pool includes seeds) */
+  directed?: boolean;
+  filters?: PairFilters;
+};
 
-      let lyricScore = 0;
-      let bridges = "";
-      let notes = "";
-      if (withLyrics && lyricsDir) {
-        const la = readLyricsFile(lyricsDir, a.spotify_id_resolved);
-        const lb = readLyricsFile(lyricsDir, b.spotify_id_resolved);
-        if (la && lb) {
-          const s = scoreLyricPair(la, lb);
-          lyricScore = s.score;
-          bridges = s.bridges.join(" | ");
-        } else {
-          notes = "missing_lyrics_for_one_or_both";
-        }
-      }
+function yearOf(s: EnrichedSong): number | null {
+  const y = Number(s.year);
+  return Number.isFinite(y) ? y : null;
+}
 
-      const harmonic = harmonicComponent(a.camelot, b.camelot, a.tempo, b.tempo);
-      const combined = 0.62 * harmonic + 0.38 * lyricScore;
+function passesSongFilters(s: EnrichedSong, f?: PairFilters): boolean {
+  if (!f) return true;
+  if (f.camelot) {
+    const c = (s.camelot_override || s.camelot || "").toUpperCase();
+    if (c !== f.camelot.toUpperCase()) return false;
+  }
+  const y = yearOf(s);
+  if (f.yearMin != null && y != null && y < f.yearMin) return false;
+  if (f.yearMax != null && y != null && y > f.yearMax) return false;
+  return true;
+}
 
-      out.push({
-        song_a_artist: a.artist,
-        song_a_title: a.title,
-        song_a_spotify_id: a.spotify_id_resolved,
-        song_b_artist: b.artist,
-        song_b_title: b.title,
-        song_b_spotify_id: b.spotify_id_resolved,
-        bpm_a: a.tempo,
-        bpm_b: b.tempo,
-        bpm_delta: bpmDelta,
-        camelot_a: a.camelot,
-        camelot_b: b.camelot,
-        key_relationship: keyRelationship(a.camelot, b.camelot),
-        harmonic_score: harmonic,
-        lyric_score: lyricScore,
-        bridge_phrases: bridges,
-        notes:
-          notes ||
-          `combined=${combined.toFixed(3)};bpm_closeness=${bpmClosenessScore(a.tempo, b.tempo, bpmTol).toFixed(3)}`,
-      });
+function scoreOnePair(
+  a: EnrichedSong,
+  b: EnrichedSong,
+  withLyrics: boolean,
+  lyricsById: Map<string, LyricBundle> | undefined,
+  bpmTol: number,
+): PairCandidate | null {
+  if (!a.camelot || !b.camelot) return null;
+  if (!a.tempo || !b.tempo) return null;
+  const bpmDelta = Math.abs(a.tempo - b.tempo);
+  if (bpmDelta > bpmTol) return null;
+  if (!isMikCompatible(a.camelot, b.camelot)) return null;
+
+  let lyricScore = 0;
+  let bridges = "";
+  let notes = "";
+  if (withLyrics && lyricsById) {
+    const la = lyricsById.get(a.spotify_id_resolved);
+    const lb = lyricsById.get(b.spotify_id_resolved);
+    if (la?.text && lb?.text) {
+      const s = scoreLyricPair(la.text, lb.text, la.timed, lb.timed);
+      lyricScore = s.score;
+      bridges = s.bridges.join(" | ");
+    } else {
+      notes = "missing_lyrics_for_one_or_both";
     }
   }
+
+  const harmonic = harmonicComponent(a.camelot, b.camelot, a.tempo, b.tempo);
+  const combined = 0.62 * harmonic + 0.38 * lyricScore;
+
+  return {
+    song_a_artist: a.artist,
+    song_a_title: a.title,
+    song_a_spotify_id: a.spotify_id_resolved,
+    song_b_artist: b.artist,
+    song_b_title: b.title,
+    song_b_spotify_id: b.spotify_id_resolved,
+    bpm_a: a.tempo,
+    bpm_b: b.tempo,
+    bpm_delta: bpmDelta,
+    camelot_a: a.camelot,
+    camelot_b: b.camelot,
+    key_relationship: keyRelationship(a.camelot, b.camelot),
+    harmonic_score: harmonic,
+    lyric_score: lyricScore,
+    bridge_phrases: bridges,
+    notes:
+      notes ||
+      `combined=${combined.toFixed(3)};bpm_closeness=${bpmClosenessScore(a.tempo, b.tempo, bpmTol).toFixed(3)}`,
+  };
+}
+
+export function generatePairCandidates(opts: PairGenOptions): PairCandidate[] {
+  const {
+    seeds,
+    pool,
+    lyricsById,
+    withLyrics,
+    directed = false,
+    filters,
+  } = opts;
+  const maxPairs = filters?.maxResults ?? getMaxPairs();
+  const bpmTol = filters?.bpmTolerance ?? getBpmTolerance();
+  const out: PairCandidate[] = [];
+  const seen = new Set<string>();
+
+  const seedList = seeds.filter((s) => passesSongFilters(s, filters));
+  const poolList = pool.filter((s) => passesSongFilters(s, filters));
+
+  const push = (a: EnrichedSong, b: EnrichedSong) => {
+    if (a.spotify_id_resolved === b.spotify_id_resolved) return;
+    const key = [a.spotify_id_resolved, b.spotify_id_resolved].sort().join("|");
+    if (!directed && seen.has(key)) return;
+    if (directed) {
+      const dkey = `${a.spotify_id_resolved}>${b.spotify_id_resolved}`;
+      if (seen.has(dkey)) return;
+      seen.add(dkey);
+    } else {
+      seen.add(key);
+    }
+    const pair = scoreOnePair(a, b, withLyrics, lyricsById, bpmTol);
+    if (!pair) return;
+    if (filters?.minHarmonicScore != null && pair.harmonic_score < filters.minHarmonicScore) {
+      return;
+    }
+    if (filters?.minLyricScore != null && pair.lyric_score < filters.minLyricScore) {
+      return;
+    }
+    if (filters?.requireBridge && !pair.bridge_phrases.trim()) return;
+    out.push(pair);
+  };
+
+  if (directed) {
+    for (const a of seedList) {
+      for (const b of poolList) {
+        if (out.length >= maxPairs) return sortPairs(out);
+        push(a, b);
+      }
+    }
+  } else {
+    // Undirected within combined unique list of seeds (playlist-only)
+    const songs = seedList;
+    for (let i = 0; i < songs.length; i++) {
+      for (let j = i + 1; j < songs.length; j++) {
+        if (out.length >= maxPairs) return sortPairs(out);
+        push(songs[i], songs[j]);
+      }
+    }
+  }
+
   return sortPairs(out);
+}
+
+/** Back-compat helper for CLI: undirected pairs within one list */
+export function generatePairsFromCatalog(opts: {
+  songs: EnrichedSong[];
+  lyricsDir?: string;
+  withLyrics: boolean;
+  filters?: PairFilters;
+}): PairCandidate[] {
+  const lyricsById = new Map<string, LyricBundle>();
+  if (opts.withLyrics && opts.lyricsDir) {
+    for (const s of opts.songs) {
+      const textPath = path.join(opts.lyricsDir, `${s.spotify_id_resolved}.txt`);
+      if (!fs.existsSync(textPath)) continue;
+      const text = fs.readFileSync(textPath, "utf8");
+      let timed: TimedLine[] = [];
+      const timedPath = path.join(opts.lyricsDir, `${s.spotify_id_resolved}.timed.json`);
+      if (fs.existsSync(timedPath)) {
+        try {
+          timed = JSON.parse(fs.readFileSync(timedPath, "utf8")) as TimedLine[];
+        } catch {
+          timed = [];
+        }
+      }
+      lyricsById.set(s.spotify_id_resolved, { text, timed });
+    }
+  }
+  return generatePairCandidates({
+    seeds: opts.songs,
+    pool: opts.songs,
+    lyricsById,
+    withLyrics: opts.withLyrics,
+    directed: false,
+    filters: opts.filters,
+  });
 }
 
 function sortPairs(pairs: PairCandidate[]): PairCandidate[] {
@@ -131,3 +262,6 @@ export function writePairCsv(pairs: PairCandidate[], outPath: string): void {
   fs.mkdirSync(path.dirname(outPath), { recursive: true });
   fs.writeFileSync(outPath, csv, "utf8");
 }
+
+// Re-export old name used by CLI
+export { generatePairsFromCatalog as generatePairCandidatesLegacy };

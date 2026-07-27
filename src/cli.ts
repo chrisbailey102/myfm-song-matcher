@@ -9,7 +9,7 @@ import {
   loadEnrichedCsv,
 } from "./catalog.js";
 import { ensureLyricsOnDisk } from "./lyrics.js";
-import { generatePairCandidates, writePairCsv } from "./pairs.js";
+import { generatePairsFromCatalog, writePairCsv } from "./pairs.js";
 
 const program = new Command();
 
@@ -43,8 +43,7 @@ program
   .action(async (opts: { catalog: string; dir: string; force?: boolean }) => {
     const songs = loadEnrichedCsv(path.resolve(opts.catalog));
     if (!process.env.GENIUS_ACCESS_TOKEN) {
-      console.error("GENIUS_ACCESS_TOKEN missing — set in .env to fetch lyrics.");
-      process.exit(1);
+      console.error("Note: GENIUS_ACCESS_TOKEN unset — using LRCLIB only (no Genius fallback).");
     }
     let ok = 0;
     let i = 0;
@@ -54,7 +53,7 @@ program
       const r = await ensureLyricsOnDisk(s, path.resolve(opts.dir), !!opts.force);
       if (r.ok) {
         ok++;
-        s.lyrics_source = r.source === "cache" ? "genius_cache" : "genius";
+        s.lyrics_source = r.source;
         s.lyrics_fetched_at = new Date().toISOString();
       } else {
         s.lyrics_source = "";
@@ -78,7 +77,7 @@ program
       const songs = loadEnrichedCsv(path.resolve(opts.catalog));
       const withLyrics = opts.lyrics !== false;
       const lyricsDir = withLyrics ? path.resolve(opts.lyricsDir) : undefined;
-      const pairs = generatePairCandidates({ songs, lyricsDir, withLyrics });
+      const pairs = generatePairsFromCatalog({ songs, lyricsDir, withLyrics });
       writePairCsv(pairs, path.resolve(opts.out));
       console.error(`Wrote ${pairs.length} pairs to ${opts.out}`);
     },
@@ -86,7 +85,7 @@ program
 
 program
   .command("all")
-  .description("Run enrich → lyrics → pairs (requires Spotify + Genius env)")
+  .description("Run enrich → lyrics (LRCLIB) → pairs")
   .requiredOption("-i, --input <xlsx>", "Input .xlsx")
   .option("--catalog <csv>", "Enriched CSV path", "out/catalog_enriched.csv")
   .option("--pairs <csv>", "Pairs CSV path", "out/pair_candidates.csv")
@@ -105,34 +104,31 @@ program
         console.error(`[enrich ${i}/${t}] ${l}`),
       );
       writeEnrichedCsv(enriched, catalogPath);
-      if (!process.env.GENIUS_ACCESS_TOKEN) {
-        console.error("Skipping lyrics: set GENIUS_ACCESS_TOKEN for Genius fetch.");
-        const pairs = generatePairCandidates({
-          songs: enriched,
-          withLyrics: false,
-        });
-        writePairCsv(pairs, path.resolve(opts.pairs));
-      } else {
-        const lyricsDir = path.resolve(opts.lyricsDir);
-        for (const s of enriched) {
-          const r = await ensureLyricsOnDisk(s, lyricsDir, false);
-          if (r.ok) {
-            s.lyrics_source = r.source === "cache" ? "genius_cache" : "genius";
-            s.lyrics_fetched_at = new Date().toISOString();
-          } else {
-            s.lyrics_source = "";
-            s.lyrics_fetched_at = "";
-          }
-          await new Promise((res) => setTimeout(res, 400));
-        }
-        writeEnrichedCsv(enriched, catalogPath);
-        const pairs = generatePairCandidates({
-          songs: enriched,
-          lyricsDir,
-          withLyrics: true,
-        });
-        writePairCsv(pairs, path.resolve(opts.pairs));
+      if (!process.env.GENIUS_ACCESS_TOKEN && !process.env.GETSONGBPM_API_KEY) {
+        // lyrics still work via LRCLIB without Genius
       }
+      const lyricsDir = path.resolve(opts.lyricsDir);
+      let lyricOk = 0;
+      for (const s of enriched) {
+        const r = await ensureLyricsOnDisk(s, lyricsDir, false);
+        if (r.ok) {
+          lyricOk++;
+          s.lyrics_source = r.source;
+          s.lyrics_fetched_at = new Date().toISOString();
+        } else {
+          s.lyrics_source = "";
+          s.lyrics_fetched_at = "";
+        }
+        await new Promise((res) => setTimeout(res, 250));
+      }
+      writeEnrichedCsv(enriched, catalogPath);
+      console.error(`Lyrics: ${lyricOk}/${enriched.length}`);
+      const pairs = generatePairsFromCatalog({
+        songs: enriched,
+        lyricsDir,
+        withLyrics: true,
+      });
+      writePairCsv(pairs, path.resolve(opts.pairs));
       console.error("Done.");
     },
   );

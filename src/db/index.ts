@@ -49,6 +49,10 @@ export async function migrate(): Promise<void> {
   const schemaPath = path.join(PROJECT_ROOT, "src", "db", "schema.sql");
   const sql = fs.readFileSync(schemaPath, "utf8");
   await getPool().query(sql);
+  // Additive migrations for existing DBs created before new columns/tables
+  await getPool().query(`
+    ALTER TABLE songs ADD COLUMN IF NOT EXISTS lyrics_source TEXT DEFAULT '';
+  `);
 }
 
 export function newId(): string {

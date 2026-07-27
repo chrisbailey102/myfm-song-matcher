@@ -8,6 +8,7 @@ import {
 } from "./spotifyErrors.js";
 import { optionalEnv } from "./config.js";
 import { fetchGetSongBpmMeta } from "./getsongbpm.js";
+import { fetchReccoBeatsFeatures } from "./reccobeats.js";
 
 export type ResolvedTrack = {
   row: CatalogRow;
@@ -22,7 +23,7 @@ export type TrackAudioMeta = {
   time_signature: number;
   energy: number;
   danceability: number;
-  bpm_key_source: "spotify" | "getsongbpm" | "";
+  bpm_key_source: "spotify" | "reccobeats" | "getsongbpm" | "";
 };
 
 function metaFromSpotify(af: SpotifyAudioFeatures): TrackAudioMeta {
@@ -49,7 +50,8 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * BPM + key for each Spotify track id (Spotify audio-features, or GetSongBPM fallback).
+ * BPM + key for each Spotify track id.
+ * Order: Spotify audio-features → ReccoBeats → GetSongBPM (per-title).
  */
 export async function resolveTrackAudioMeta(
   resolved: ResolvedTrack[],
@@ -67,22 +69,41 @@ export async function resolveTrackAudioMeta(
   } catch (err) {
     if (!isSpotifyAudioFeaturesForbidden(err)) throw err;
     onStatus?.(
-      "Spotify audio-features returned 403 (normal for new apps). Trying GetSongBPM…",
+      "Spotify audio-features returned 403 (normal for new apps). Trying ReccoBeats…",
     );
   }
 
-  const apiKey = optionalEnv("GETSONGBPM_API_KEY");
+  try {
+    const recco = await fetchReccoBeatsFeatures(ids);
+    for (const [id, meta] of recco) out.set(id, meta);
+    onStatus?.(`ReccoBeats: got BPM/key for ${out.size}/${ids.length} tracks`);
+  } catch (err) {
+    onStatus?.(
+      `ReccoBeats failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  const missing = ids.filter((id) => !out.has(id));
+  if (missing.length === 0) return out;
+
+  const apiKey = optionalEnv("GETSONGBPM_API_KEY")?.trim();
   if (!apiKey) {
-    throw new Error(SPOTIFY_AUDIO_FEATURES_HELP);
+    if (out.size === 0) throw new Error(SPOTIFY_AUDIO_FEATURES_HELP);
+    onStatus?.(
+      `Skipping GetSongBPM for ${missing.length} missing tracks (no GETSONGBPM_API_KEY).`,
+    );
+    return out;
   }
 
   const byId = new Map<string, ResolvedTrack>();
   for (const r of resolved) byId.set(r.track.id, r);
 
   let i = 0;
-  for (const [id, { row }] of byId) {
+  for (const id of missing) {
     i++;
-    onStatus?.(`[GetSongBPM ${i}/${byId.size}] ${row.artist} — ${row.title}`);
+    const row = byId.get(id)?.row;
+    if (!row) continue;
+    onStatus?.(`[GetSongBPM ${i}/${missing.length}] ${row.artist} — ${row.title}`);
     const g = await fetchGetSongBpmMeta(row.artist, row.title, apiKey);
     if (g) {
       out.set(id, {
@@ -101,7 +122,8 @@ export async function resolveTrackAudioMeta(
 
   if (out.size === 0) {
     throw new Error(
-      "No BPM/key data returned from GetSongBPM. Check GETSONGBPM_API_KEY and song titles.",
+      "No BPM/key data from Spotify, ReccoBeats, or GetSongBPM. " +
+        "GetSongBPM may be blocked by Cloudflare from servers — ReccoBeats is preferred.",
     );
   }
 

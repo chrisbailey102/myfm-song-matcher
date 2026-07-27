@@ -16,9 +16,6 @@ export function isSpotifyAudioFeaturesForbidden(err: unknown): boolean {
 
 export const SPOTIFY_AUDIO_FEATURES_HELP = `Spotify blocked "audio-features" for newer developer apps (since Nov 2024).
 
-Fix options:
-  1. Add a free GetSongBPM API key to .env or spotify-key.env:
-       GETSONGBPM_API_KEY=your_key
-     Register at https://getsongbpm.com/api
-  2. Or request extended Spotify Web API access in the Spotify Developer Dashboard
-     (see https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api)`;
+MyFM falls back to ReccoBeats (free, no key) using Spotify track IDs, then optionally GetSongBPM.
+If both fail, check network access to https://api.reccobeats.com or set GETSONGBPM_API_KEY
+(note: GetSongBPM is often blocked by Cloudflare for non-browser clients).`;

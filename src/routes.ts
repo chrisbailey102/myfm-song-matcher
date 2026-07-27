@@ -195,13 +195,44 @@ export function registerRoutes(app: Express): void {
   });
 
   app.get("/api/projects/:id/pairs", requireAuth, async (req, res) => {
-    const project = await getProjectById(req.params.id);
-    if (!project || project.user_id !== authed(req).id) {
-      res.status(404).json({ error: "Project not found" });
-      return;
+    try {
+      const project = await getProjectById(req.params.id);
+      if (!project || project.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      const mode =
+        req.query.mode === "expand" ? ("expand" as const) : ("playlist" as const);
+      const num = (v: unknown) => {
+        if (v == null || v === "") return undefined;
+        const n = Number(v);
+        return Number.isFinite(n) ? n : undefined;
+      };
+      const filters = {
+        bpmTolerance: num(req.query.bpmTolerance),
+        minLyricScore: num(req.query.minLyricScore),
+        minHarmonicScore: num(req.query.minHarmonicScore),
+        requireBridge: req.query.requireBridge === "1" || req.query.requireBridge === "true",
+        camelot: typeof req.query.camelot === "string" ? req.query.camelot : undefined,
+        yearMin: num(req.query.yearMin),
+        yearMax: num(req.query.yearMax),
+        maxResults: num(req.query.maxResults) ?? 300,
+      };
+      const pairs = await getProjectPairs(project.id, { mode, filters });
+      res.json({ pairs, count: pairs.length, mode, filters });
+    } catch (e) {
+      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
     }
-    const pairs = await getProjectPairs(project.id);
-    res.json({ pairs, count: pairs.length });
+  });
+
+  app.get("/api/library", requireAuth, async (_req, res) => {
+    try {
+      const { listLibraryTracks } = await import("./db/library.js");
+      const tracks = await listLibraryTracks();
+      res.json({ tracks, count: tracks.length });
+    } catch (e) {
+      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+    }
   });
 
   app.get("/api/jobs/:id", requireAuth, async (req, res) => {

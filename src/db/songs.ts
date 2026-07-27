@@ -29,6 +29,7 @@ export type DbSong = {
   needs_review: boolean;
   review_reason: string;
   bpm_key_source: string;
+  lyrics_source: string;
   created_at: number;
   updated_at: number;
 };
@@ -56,6 +57,7 @@ export function dbSongToEnriched(s: DbSong): EnrichedSong {
     needs_review: s.needs_review,
     review_reason: s.review_reason,
     bpm_key_source: s.bpm_key_source,
+    lyrics_source: s.lyrics_source || undefined,
     tempo_override: s.tempo_override ?? undefined,
     camelot_override: s.camelot_override ?? undefined,
   };
@@ -74,9 +76,9 @@ export async function replaceProjectSongs(
         id, project_id, position, artist, title, year, spotify_id_locked, spotify_id_resolved,
         spotify_url, spotify_name, spotify_artists, duration_ms, popularity, spotify_key, spotify_mode,
         tempo, camelot, time_signature, energy, danceability, match_confidence, needs_review,
-        review_reason, bpm_key_source, created_at, updated_at
+        review_reason, bpm_key_source, lyrics_source, created_at, updated_at
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$25
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$26
       )`,
       [
         newId(),
@@ -103,6 +105,7 @@ export async function replaceProjectSongs(
         s.needs_review,
         s.review_reason,
         s.bpm_key_source ?? "",
+        s.lyrics_source ?? "",
         ts,
       ],
     );

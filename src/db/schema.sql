@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS songs (
   needs_review BOOLEAN DEFAULT FALSE,
   review_reason TEXT DEFAULT '',
   bpm_key_source TEXT DEFAULT '',
+  lyrics_source TEXT DEFAULT '',
   created_at BIGINT NOT NULL,
   updated_at BIGINT NOT NULL,
   UNIQUE(project_id, spotify_id_resolved)
@@ -66,6 +67,36 @@ CREATE TABLE IF NOT EXISTS jobs (
   updated_at BIGINT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS lyrics_cache (
+  spotify_id TEXT PRIMARY KEY,
+  artist TEXT,
+  title TEXT,
+  source TEXT NOT NULL,
+  plain_text TEXT NOT NULL,
+  timed_json TEXT,
+  fetched_at BIGINT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS library_tracks (
+  spotify_id TEXT PRIMARY KEY,
+  artist TEXT NOT NULL,
+  title TEXT NOT NULL,
+  year TEXT,
+  spotify_url TEXT,
+  duration_ms INTEGER DEFAULT 0,
+  popularity INTEGER DEFAULT 0,
+  tempo REAL DEFAULT 0,
+  camelot TEXT DEFAULT '',
+  energy REAL DEFAULT 0,
+  danceability REAL DEFAULT 0,
+  bpm_key_source TEXT DEFAULT '',
+  lyrics_source TEXT DEFAULT '',
+  last_seen_at BIGINT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
 CREATE INDEX IF NOT EXISTS idx_songs_project ON songs(project_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_library_camelot ON library_tracks(camelot);
+CREATE INDEX IF NOT EXISTS idx_library_tempo ON library_tracks(tempo);

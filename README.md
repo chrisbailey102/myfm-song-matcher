@@ -1,13 +1,13 @@
 # MyFM Song Matcher
 
-**Node 20+** web app + CLI for mashup research: import **Spotify playlists** (including private), enrich BPM/key, score harmonic + lyric pairs, and **override BPM/Camelot** in the UI.
+**Node 20+** web app + CLI for mashup research: import **Spotify playlists** (including private), enrich BPM/key, score harmonic + lyric pairs (with timed bridges), and **override BPM/Camelot** in the UI.
 
 ## Prerequisites
 
 - [Spotify Developer](https://developer.spotify.com/dashboard) app — Client ID + Secret, with **Redirect URI** set (see below).
 - **Postgres** — local via Docker, or Railway Postgres in production.
-- [GetSongBPM API key](https://getsongbpm.com/api) — BPM/key when Spotify blocks audio-features on new apps.
-- Optional: [Genius](https://genius.com/api-clients) for lyrics (CLI).
+- BPM/key: [ReccoBeats](https://reccobeats.com) is used automatically when Spotify audio-features returns 403 (no key). Optional [GetSongBPM](https://getsongbpm.com/api) as another fallback.
+- Lyrics: [LRCLIB](https://lrclib.net) timed lyrics by default (no key). Optional [Genius](https://genius.com/api-clients) Client Access Token as fallback.
 
 ## Quick start (local)
 
@@ -59,16 +59,18 @@ Run from project root (with `.env` present):
 # Replace ./my-catalog.xlsx with the real path to your Excel file.
 npm run myfm -- enrich -i ./my-catalog.xlsx -o out/catalog_enriched.csv
 
-# 2) Fetch lyrics → out/lyrics/<spotify_id>.txt + update CSV columns
+# 2) Fetch lyrics (LRCLIB first → Genius fallback) → out/lyrics/*.txt + *.timed.json
 npm run myfm -- lyrics -c out/catalog_enriched.csv -d out/lyrics
+# Force refresh (ignore on-disk cache):
+npm run myfm -- lyrics -c out/catalog_enriched.csv -d out/lyrics --force
 
-# 3) Pair candidates → out/pair_candidates.csv
+# 3) Pair candidates → out/pair_candidates.csv (bridges may include A@m:ss→B@m:ss)
 npm run myfm -- pairs -c out/catalog_enriched.csv -d out/lyrics -o out/pair_candidates.csv
 
 # Harmonic only (no lyric files)
 npm run myfm -- pairs -c out/catalog_enriched.csv --no-lyrics
 
-# One-shot (lyrics step skipped if GENIUS_ACCESS_TOKEN unset)
+# One-shot
 npm run myfm -- all -i ./my-catalog.xlsx
 ```
 
@@ -84,9 +86,9 @@ npm run myfm -- all -i ./my-catalog.xlsx
 
 - **Spotify OAuth** — read private playlists
 - **Playlist import** — URL or picker from your library
-- **Background enrich job** — BPM/key + metadata per track
+- **Background enrich + lyrics jobs** — BPM/key, LRCLIB lyrics cached in Postgres, library memory across projects
 - **Manual overrides** — edit `tempo_override` / `camelot_override` per song (used for pairing)
-- **Pair candidates** — harmonic scores for the project catalog
+- **Pair filters** — playlist-only vs expand-to-library; BPM tolerance; min lyric/harmonic score; Camelot; year range; require lyric bridge
 - **Legacy Excel upload** — collapsible section at bottom of page
 
 ## Deploy to Railway
