@@ -33,15 +33,27 @@ app.use(
 );
 
 async function main(): Promise<void> {
-  await migrate();
-  startJobWorker();
   const port = getUiPort();
   const host = process.env.HOST ?? "0.0.0.0";
-  const server = app.listen(port, host, () => {
-    console.error(`MyFM Song Matcher: ${getAppBaseUrl()}/`);
-    console.error(`Listening on ${host}:${port}`);
+  console.error(
+    `Starting Song Matcher (PORT=${port}, DATABASE_URL=${process.env.DATABASE_URL ? "set" : "MISSING"})`,
+  );
+
+  // Bind immediately so Railway healthchecks succeed even if migrate is slow.
+  await new Promise<void>((resolve, reject) => {
+    const server = app.listen(port, host, () => {
+      console.error(`MyFM Song Matcher: ${getAppBaseUrl()}/`);
+      console.error(`Listening on ${host}:${port}`);
+      resolve();
+    });
+    server.on("error", reject);
+    server.setTimeout(20 * 60 * 1000);
   });
-  server.setTimeout(20 * 60 * 1000);
+
+  console.error("Running DB migrate…");
+  await migrate();
+  console.error("Migrate complete");
+  startJobWorker();
 }
 
 main().catch((e) => {

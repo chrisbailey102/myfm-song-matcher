@@ -17,6 +17,7 @@ export function getPool(): pg.Pool {
     }
     pool = new Pool({
       connectionString: url,
+      connectionTimeoutMillis: 10_000,
       ssl: url.includes("localhost") || url.includes("127.0.0.1")
         ? undefined
         : { rejectUnauthorized: false },
