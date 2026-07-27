@@ -68,7 +68,8 @@ export function getMaxPairs(): number {
 }
 
 export function getUiPort(): number {
-  const raw = process.env.MYFM_UI_PORT ?? "3847";
+  // Railway injects PORT; prefer it in production so healthchecks work.
+  const raw = process.env.PORT ?? process.env.MYFM_UI_PORT ?? "3847";
   const n = Number(raw);
   return Number.isFinite(n) ? Math.floor(n) : 3847;
 }
