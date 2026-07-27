@@ -106,6 +106,8 @@ docker compose up --build
 
 ## Data sources & compliance
 
+BPM and musical key data provided by [GetSongBPM](https://getsongbpm.com).
+
 - **Spotify** — track search works on new developer apps. **Audio Features (BPM/key) often return 403** for apps created after Nov 2024 ([Spotify blog](https://developer.spotify.com/blog/2024-11-27-changes-to-the-web-api)). Set **`GETSONGBPM_API_KEY`** ([free at getsongbpm.com/api](https://getsongbpm.com/api)) in `.env` or `spotify-key.env` and MyFM will use that for tempo/Camelot instead.
 - **Genius** — via the `genius-lyrics` package (scrapes lyric pages). Check [Genius API Terms](https://genius.com/static/terms) for your use case. Do **not** rely on Tunebat scraping (fragile / ToS risk); this tool does not implement it.
 
