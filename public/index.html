@@ -442,7 +442,7 @@
       }
       table.mik td.key {
         text-align: center;
-        width: 7.5rem;
+        width: 8.5rem;
       }
       table.mik td.energy {
         text-align: center;
@@ -520,6 +520,53 @@
         margin-bottom: 0.55rem;
         width: 100%;
         flex-shrink: 0;
+      }
+      #lyric-results {
+        flex-shrink: 0;
+        max-height: 10rem;
+        overflow: auto;
+        margin: 0 0 0.55rem;
+        padding: 0.15rem 0.35rem 0.35rem;
+        border: 1px solid var(--line-soft);
+        border-radius: 10px;
+        background: #fafbfc;
+      }
+      #lyric-results:empty {
+        display: none;
+      }
+      #lyric-results .lyric-results-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+        margin-bottom: 0.35rem;
+        font-size: 0.85rem;
+        color: var(--muted);
+      }
+      .lyric-hit mark,
+      .snip mark {
+        background: #ffe08a;
+        color: inherit;
+        font-weight: 700;
+        padding: 0 0.12em;
+        border-radius: 2px;
+      }
+      .camelot-key-toggle {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        margin-top: 0.55rem;
+        justify-content: center;
+      }
+      .camelot-key-toggle button {
+        font-size: 0.72rem;
+        padding: 0.28rem 0.55rem;
+        border-radius: 999px;
+      }
+      .camelot-key-toggle button.active {
+        background: var(--ink);
+        color: #fff;
+        border-color: var(--ink);
       }
       .mik-wrap {
         overflow: auto;
@@ -829,10 +876,15 @@
       <div class="app-shell">
         <aside class="sidebar">
           <div class="camelot-panel">
-            <div class="wheel-label">Camelot filter</div>
+            <div class="wheel-label">Key filter</div>
             <div id="camelot-wheel" aria-label="Camelot wheel key filter"></div>
             <div id="key-filter-status">Click a key to filter</div>
-            <button type="button" id="btn-clear-key" class="secondary" style="font-size:0.75rem;padding:0.3rem 0.7rem">All keys</button>
+            <div class="camelot-key-toggle" role="group" aria-label="Key label style">
+              <button type="button" class="secondary active" data-key-mode="camelot" title="Camelot codes (8A)">Camelot</button>
+              <button type="button" class="secondary" data-key-mode="flat" title="Musical keys with flats">♭</button>
+              <button type="button" class="secondary" data-key-mode="sharp" title="Musical keys with sharps">#</button>
+            </div>
+            <button type="button" id="btn-clear-key" class="secondary" style="font-size:0.75rem;padding:0.3rem 0.7rem;margin-top:0.45rem">All keys</button>
           </div>
           <div class="sidebar-head">
             <h2>My Collection</h2>
@@ -1032,19 +1084,62 @@
       };
       const CAMELOT_BG = CAMELOT_B;
 
+      /** Camelot → musical key (♭ preference — Mixed In Key style). */
+      const CAMELOT_FLAT = {
+        "1A": "A♭m", "2A": "E♭m", "3A": "B♭m", "4A": "Fm", "5A": "Cm", "6A": "Gm",
+        "7A": "Dm", "8A": "Am", "9A": "Em", "10A": "Bm", "11A": "F♯m", "12A": "D♭m",
+        "1B": "B", "2B": "F♯", "3B": "D♭", "4B": "A♭", "5B": "E♭", "6B": "B♭",
+        "7B": "F", "8B": "C", "9B": "G", "10B": "D", "11B": "A", "12B": "E",
+      };
+      /** Same keys with ♯ enharmonics where applicable. */
+      const CAMELOT_SHARP = {
+        "1A": "G♯m", "2A": "D♯m", "3A": "A♯m", "4A": "Fm", "5A": "Cm", "6A": "Gm",
+        "7A": "Dm", "8A": "Am", "9A": "Em", "10A": "Bm", "11A": "F♯m", "12A": "C♯m",
+        "1B": "B", "2B": "F♯", "3B": "C♯", "4B": "G♯", "5B": "D♯", "6B": "A♯",
+        "7B": "F", "8B": "C", "9B": "G", "10B": "D", "11B": "A", "12B": "E",
+      };
+
+      let keyDisplayMode = "camelot"; // camelot | flat | sharp
+
       function esc(s) {
         return String(s ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+      }
+
+      function escapeRegExp(s) {
+        return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }
+
+      function highlightSnippet(snippet, q) {
+        const safe = esc(snippet);
+        const needle = String(q || "").trim();
+        if (!needle) return safe;
+        try {
+          const re = new RegExp(`(${escapeRegExp(needle)})`, "ig");
+          return safe.replace(re, "<mark>$1</mark>");
+        } catch {
+          return safe;
+        }
+      }
+
+      function formatKeyLabel(camelot) {
+        const c = String(camelot || "").trim().toUpperCase();
+        if (!c) return "—";
+        if (keyDisplayMode === "flat") return CAMELOT_FLAT[c] || c;
+        if (keyDisplayMode === "sharp") return CAMELOT_SHARP[c] || c;
+        return c;
       }
 
       function keyBadge(camelot) {
         const c = String(camelot || "").trim().toUpperCase();
         if (!c) return `<span class="key-badge" style="background:#e8eaed;color:#888">—</span>`;
         const m = /^(\d{1,2})([AB])$/.exec(c);
-        if (!m) return `<span class="key-badge" style="background:#e8eaed">${esc(c)}</span>`;
+        if (!m) return `<span class="key-badge" style="background:#e8eaed">${esc(formatKeyLabel(c))}</span>`;
         const n = Number(m[1]);
         const letter = m[2];
         const bg = (letter === "A" ? CAMELOT_A[n] : CAMELOT_B[n]) || "#e8eaed";
-        return `<span class="key-badge" style="background:${bg}">${esc(c)}</span>`;
+        const label = formatKeyLabel(c);
+        const title = keyDisplayMode === "camelot" ? c : `${c} · ${label}`;
+        return `<span class="key-badge" style="background:${bg}" title="${esc(title)}">${esc(label)}</span>`;
       }
 
       function energyLevel(s) {
@@ -1074,7 +1169,8 @@
         if (!keyFilter) status.textContent = "Click a key to filter";
         else {
           const n = songsCache.filter((s) => effectiveCamelot(s).toUpperCase() === keyFilter).length;
-          status.textContent = `Showing ${keyFilter} · ${n} track${n === 1 ? "" : "s"}`;
+          const label = formatKeyLabel(keyFilter);
+          status.textContent = `Showing ${label}${label !== keyFilter ? ` (${keyFilter})` : ""} · ${n} track${n === 1 ? "" : "s"}`;
         }
         // Keep pair filter camelot field in sync when on a playlist
         if ($("flt-camelot")) $("flt-camelot").value = keyFilter || "";
@@ -1091,11 +1187,33 @@
         });
       }
 
-      function buildCamelotWheel() {
+      function setKeyDisplayMode(mode) {
+        if (!["camelot", "flat", "sharp"].includes(mode)) return;
+        keyDisplayMode = mode;
+        document.querySelectorAll(".camelot-key-toggle [data-key-mode]").forEach((btn) => {
+          btn.classList.toggle("active", btn.getAttribute("data-key-mode") === mode);
+        });
+        buildCamelotWheel(true);
+        if (keyFilter) {
+          const n = songsCache.filter((s) => effectiveCamelot(s).toUpperCase() === keyFilter).length;
+          const label = formatKeyLabel(keyFilter);
+          $("key-filter-status").textContent =
+            `Showing ${label}${label !== keyFilter ? ` (${keyFilter})` : ""} · ${n} track${n === 1 ? "" : "s"}`;
+        }
+        renderSongs();
+        if (pairsCache.length && typeof renderPairs === "function") renderPairs();
+      }
+
+      function buildCamelotWheel(force = false) {
         const host = $("camelot-wheel");
         if (!host) return;
         const size = 280;
-        if (host.dataset.ready === "1" && host.dataset.size === String(size)) {
+        if (
+          !force &&
+          host.dataset.ready === "1" &&
+          host.dataset.size === String(size) &&
+          host.dataset.keyMode === keyDisplayMode
+        ) {
           updateCamelotWheelSelection();
           return;
         }
@@ -1105,7 +1223,10 @@
         const rOuter = size * (98 / 210);
         const rMid = size * (64 / 210);
         const rInner = size * (32 / 210);
-        const labelSize = Math.round(14 * (size / 210));
+        const labelSize =
+          keyDisplayMode === "camelot"
+            ? Math.round(14 * (size / 210))
+            : Math.round(10 * (size / 210));
         const step = (Math.PI * 2) / 12;
         // 12 at top; numbers increase clockwise
         const nums = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
@@ -1118,20 +1239,24 @@
           const mid = (a0 + a1) / 2;
           const codeB = `${n}B`;
           const codeA = `${n}A`;
-          paths += `<path class="key-seg" data-key="${codeB}" fill="${CAMELOT_B[n]}" d="${annularSector(cx, cy, rMid, rOuter, a0, a1)}"><title>${codeB}</title></path>`;
-          paths += `<path class="key-seg" data-key="${codeA}" fill="${CAMELOT_A[n]}" d="${annularSector(cx, cy, rInner, rMid, a0, a1)}"><title>${codeA}</title></path>`;
+          const labelB = formatKeyLabel(codeB);
+          const labelA = formatKeyLabel(codeA);
+          paths += `<path class="key-seg" data-key="${codeB}" fill="${CAMELOT_B[n]}" d="${annularSector(cx, cy, rMid, rOuter, a0, a1)}"><title>${esc(labelB)} (${codeB})</title></path>`;
+          paths += `<path class="key-seg" data-key="${codeA}" fill="${CAMELOT_A[n]}" d="${annularSector(cx, cy, rInner, rMid, a0, a1)}"><title>${esc(labelA)} (${codeA})</title></path>`;
           const [bx, by] = polar(cx, cy, (rOuter + rMid) / 2, mid);
           const [ax, ay] = polar(cx, cy, (rMid + rInner) / 2, mid);
-          labels += `<text x="${bx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-size="${labelSize}">${codeB}</text>`;
-          labels += `<text x="${ax}" y="${ay}" text-anchor="middle" dominant-baseline="central" font-size="${labelSize}">${codeA}</text>`;
+          labels += `<text x="${bx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-size="${labelSize}">${esc(labelB)}</text>`;
+          labels += `<text x="${ax}" y="${ay}" text-anchor="middle" dominant-baseline="central" font-size="${labelSize}">${esc(labelA)}</text>`;
         });
 
         host.innerHTML = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" role="img">${paths}${labels}</svg>`;
         host.dataset.ready = "1";
         host.dataset.size = String(size);
+        host.dataset.keyMode = keyDisplayMode;
         host.querySelectorAll("path.key-seg").forEach((p) => {
           p.addEventListener("click", () => setKeyFilter(p.getAttribute("data-key")));
         });
+        updateCamelotWheelSelection();
       }
 
       function setPlayStatus(msg) {
@@ -2111,7 +2236,7 @@
           box.textContent = "Type at least 2 characters.";
           return;
         }
-        box.textContent = "Searching…";
+        box.innerHTML = `<div class="lyric-results-head"><span>Searching…</span></div>`;
         try {
           const path =
             viewMode === "library"
@@ -2119,23 +2244,29 @@
               : `/api/projects/${currentProjectId}/lyrics/search?q=${encodeURIComponent(q)}`;
           const { hits } = await api(path);
           if (!hits.length) {
-            box.textContent = "No lyric matches in this project (lyrics job may still be running).";
+            box.innerHTML = `<div class="lyric-results-head"><span>No lyric matches (lyrics may still be running).</span><button type="button" class="secondary" id="btn-clear-lyric-results" style="font-size:0.75rem;padding:0.2rem 0.55rem">Clear</button></div>`;
+            $("btn-clear-lyric-results").onclick = () => { box.innerHTML = ""; };
             return;
           }
-          box.innerHTML = hits
-            .map(
-              (h) => `<div class="lyric-hit">
+          box.innerHTML =
+            `<div class="lyric-results-head"><span>${hits.length} match${hits.length === 1 ? "" : "es"} for “${esc(q)}”</span><button type="button" class="secondary" id="btn-clear-lyric-results" style="font-size:0.75rem;padding:0.2rem 0.55rem">Clear</button></div>` +
+            hits
+              .map(
+                (h) => `<div class="lyric-hit">
                 <button type="button" class="play tiny" data-play="${esc(h.spotify_id)}" data-ms="${h.match_ms ?? 0}">▶</button>
                 <strong>${esc(h.artist)}</strong> — ${esc(h.title)}
                 ${h.match_ms != null ? `<span class="badge">${Math.floor(h.match_ms / 60000)}:${String(Math.floor((h.match_ms % 60000) / 1000)).padStart(2, "0")}</span>` : ""}
-                <div class="snip">${esc(h.snippet)}</div>
+                <div class="snip">${highlightSnippet(h.snippet, q)}</div>
               </div>`,
-            )
-            .join("");
+              )
+              .join("");
+          $("btn-clear-lyric-results").onclick = () => { box.innerHTML = ""; };
           box.querySelectorAll("[data-play]").forEach((btn) => {
             btn.onclick = () =>
               playTrack(btn.getAttribute("data-play"), Number(btn.getAttribute("data-ms") || 0));
           });
+          // Keep the song table in view — scroll results panel, not the whole page away
+          box.scrollTop = 0;
         } catch (e) {
           box.textContent = "Search failed: " + e.message;
         }
@@ -2227,6 +2358,9 @@
       if (params.get("auth_error")) $("auth-status").textContent = "Auth error: " + params.get("auth_error");
 
       $("btn-clear-key").onclick = () => setKeyFilter(null);
+      document.querySelectorAll(".camelot-key-toggle [data-key-mode]").forEach((btn) => {
+        btn.onclick = () => setKeyDisplayMode(btn.getAttribute("data-key-mode"));
+      });
       buildCamelotWheel();
 
       (async () => {
