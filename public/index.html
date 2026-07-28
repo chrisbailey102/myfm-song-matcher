@@ -1102,7 +1102,7 @@
       let playlistsCache = [];
       let libraryCount = 0;
       let songSort = { key: "tempo", dir: 1 };
-      let pairSort = { key: "lyric_score", dir: -1 };
+      let pairSort = { key: "harmonic_score", dir: -1 };
       let previewAudio = null;
       let nowPlayingId = null;
       let playMode = null; // 'embed' | null
@@ -2435,11 +2435,9 @@
         );
         const show = sorted.slice(0, 200);
         const sortBtns = [
-          ["lyric_score", "Lyric"],
           ["harmonic_score", "Harmonic"],
           ["bpm_delta", "BPM Δ"],
-          ["song_a_artist", "A artist"],
-          ["song_b_artist", "B artist"],
+          ["lyric_score", "Lyric"],
         ]
           .map(
             ([key, label]) =>
