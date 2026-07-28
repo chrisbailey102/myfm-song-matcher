@@ -983,7 +983,7 @@
               <div class="track-head">
                 <input type="text" id="lyric-q" placeholder="Search lyrics…" style="width:min(280px,100%)" />
                 <button type="button" id="btn-lyric-search" class="secondary">Search</button>
-                <span class="hint" style="margin:0">Double-click tempo/key to edit · Open Spotify on your phone or computer, then press ▶</span>
+                <span class="hint" style="margin:0">Double-click tempo/key to edit · ▶ plays in this browser with Spotify Premium (or opens your Spotify app)</span>
               </div>
               <div id="lyric-results" class="hint"></div>
               <p class="status" id="play-status" style="margin:0.25rem 0 0.5rem"></p>
@@ -1046,7 +1046,11 @@
       let pairSort = { key: "lyric_score", dir: -1 };
       let previewAudio = null;
       let nowPlayingId = null;
-      let playMode = null; // 'device' | 'preview' | null
+      let playMode = null; // 'web' | 'device' | 'preview' | null
+      let webPlayer = null;
+      let webDeviceId = null;
+      let webPlayerReady = false;
+      let webPlayerInitPromise = null;
       let allowInlineEdit = true;
       let keyFilter = null; // e.g. "8B" or null = all
       let awaitImportSuccessFor = null; // project id — show one-shot success when enrich finishes
@@ -1281,10 +1285,14 @@
           previewAudio.pause();
           previewAudio.currentTime = 0;
         }
-        const wasDevice = playMode === "device";
+        const mode = playMode;
+        const wasSpotify = mode === "device" || mode === "web";
         setPlayingUi(null, null);
-        if (wasDevice) {
+        if (wasSpotify) {
           try {
+            if (webPlayer && mode === "web") {
+              try { await webPlayer.pause(); } catch (_) { /* fall through */ }
+            }
             await api("/api/spotify/pause", { method: "POST" });
             setPlayStatus("Stopped.");
           } catch (e) {
@@ -1293,6 +1301,90 @@
         } else {
           setPlayStatus("Stopped.");
         }
+      }
+
+      function loadSpotifySdk() {
+        return new Promise((resolve, reject) => {
+          if (window.Spotify?.Player) {
+            resolve();
+            return;
+          }
+          const prev = window.onSpotifyWebPlaybackSDKReady;
+          window.onSpotifyWebPlaybackSDKReady = () => {
+            if (typeof prev === "function") prev();
+            resolve();
+          };
+          if (!document.getElementById("spotify-player-sdk")) {
+            const s = document.createElement("script");
+            s.id = "spotify-player-sdk";
+            s.src = "https://sdk.scdn.co/spotify-player.js";
+            s.async = true;
+            s.onerror = () => reject(new Error("Could not load Spotify Web Playback SDK"));
+            document.head.appendChild(s);
+          }
+          // SDK may already be loading
+          setTimeout(() => {
+            if (window.Spotify?.Player) resolve();
+          }, 0);
+        });
+      }
+
+      async function initWebPlayer() {
+        if (webPlayerInitPromise) return webPlayerInitPromise;
+        webPlayerInitPromise = (async () => {
+          try {
+            await loadSpotifySdk();
+            if (webPlayer) {
+              try { await webPlayer.disconnect(); } catch (_) { /* ignore */ }
+              webPlayer = null;
+              webDeviceId = null;
+              webPlayerReady = false;
+            }
+            webPlayer = new window.Spotify.Player({
+              name: "Song Matcher",
+              getOAuthToken: (cb) => {
+                api("/api/spotify/token")
+                  .then((t) => cb(t.access_token))
+                  .catch(() => cb(""));
+              },
+              volume: 0.85,
+            });
+            webPlayer.addListener("ready", ({ device_id }) => {
+              webDeviceId = device_id;
+              webPlayerReady = true;
+              console.info("Song Matcher Spotify web player ready", device_id);
+            });
+            webPlayer.addListener("not_ready", () => {
+              webPlayerReady = false;
+              webDeviceId = null;
+            });
+            webPlayer.addListener("authentication_error", () => {
+              webPlayerReady = false;
+              $("btn-reauth").hidden = false;
+              setPlayStatus(
+                "In-browser playback needs updated Spotify permission — click Reconnect Spotify above, then try ▶ again.",
+              );
+            });
+            webPlayer.addListener("account_error", () => {
+              webPlayerReady = false;
+              setPlayStatus(
+                "In-browser full playback needs Spotify Premium. You can still use previews when available, or open the Spotify app.",
+              );
+            });
+            webPlayer.addListener("playback_error", ({ message }) => {
+              setPlayStatus("Spotify playback error: " + (message || "unknown"));
+            });
+            const ok = await webPlayer.connect();
+            if (!ok) {
+              webPlayerReady = false;
+              console.warn("Spotify web player connect() returned false");
+            }
+          } catch (e) {
+            webPlayerInitPromise = null;
+            console.warn("Web player init failed", e);
+          }
+        })();
+        return webPlayerInitPromise;
       }
 
       function parseClock(mmss) {
@@ -1319,7 +1411,7 @@
         return body;
       }
 
-      /** Prefer Spotify Connect (seekable). Else 30s preview MP3. Else open Spotify at timestamp. */
+      /** Prefer in-browser Web Player (Premium), then Spotify app, then 30s preview, else open Spotify. */
       async function playTrack(spotifyId, positionMs = 0) {
         if (!spotifyId) return;
         if (nowPlayingId === spotifyId) {
@@ -1330,20 +1422,50 @@
           previewAudio.pause();
           previewAudio.currentTime = 0;
         }
-        setPlayStatus("Looking for your open Spotify app…");
+        if (!webPlayerReady) {
+          await initWebPlayer();
+          // Give Spotify a moment to register the device
+          if (webDeviceId) await new Promise((r) => setTimeout(r, 400));
+        }
+        setPlayStatus(
+          webDeviceId
+            ? "Starting playback in Song Matcher…"
+            : "Looking for Spotify playback…",
+        );
         try {
+          const body = { spotifyId, positionMs };
+          if (webDeviceId) body.deviceId = webDeviceId;
           const r = await api("/api/spotify/play", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ spotifyId, positionMs }),
+            body: JSON.stringify(body),
           });
-          if (r.ok && r.mode === "device") {
+          if (r.ok && (r.mode === "web" || r.mode === "device")) {
             const t = positionMs ? ` (from ${Math.floor(positionMs / 1000)}s)` : "";
-            setPlayingUi(spotifyId, "device");
+            setPlayingUi(spotifyId, r.mode);
             setPlayStatus(
-              `Playing in Spotify${t}. Sound comes from your phone or computer — check that Spotify isn’t muted.`,
+              r.mode === "web"
+                ? `Playing in Song Matcher${t}. Sound comes from this browser tab.`
+                : `Playing in Spotify${t}. Sound comes from your phone or computer — check that Spotify isn’t muted.`,
             );
             return;
+          }
+          // If web device failed, retry without deviceId (phone/desktop app)
+          if (webDeviceId && !r.ok) {
+            const r2 = await api("/api/spotify/play", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ spotifyId, positionMs }),
+            });
+            if (r2.ok && r2.mode === "device") {
+              const t = positionMs ? ` (from ${Math.floor(positionMs / 1000)}s)` : "";
+              setPlayingUi(spotifyId, "device");
+              setPlayStatus(
+                `Playing in Spotify${t}. Sound comes from your phone or computer — check that Spotify isn’t muted.`,
+              );
+              return;
+            }
+            Object.assign(r, r2);
           }
           if (r.previewUrl && !positionMs) {
             if (!previewAudio) previewAudio = $("preview-audio");
@@ -1351,7 +1473,7 @@
             await previewAudio.play();
             setPlayingUi(spotifyId, "preview");
             setPlayStatus(
-              "Playing a 30-second preview in this browser. For the full track: open Spotify, then press ▶ again.",
+              "Playing a 30-second preview in this browser. Full tracks need Spotify Premium (in-app) or the Spotify app.",
             );
             previewAudio.onended = () => {
               if (nowPlayingId === spotifyId) setPlayingUi(null, null);
@@ -1364,20 +1486,20 @@
             if (r.needsReauth) {
               $("btn-reauth").hidden = false;
               setPlayStatus(
-                "To play from here: 1) Click Reconnect Spotify above and approve access. 2) Open the Spotify app on your phone or computer. 3) Press ▶ again.",
+                "To play here: 1) Click Reconnect Spotify above and approve access. 2) Make sure you have Spotify Premium for in-browser play. 3) Press ▶ again.",
               );
               return;
             }
             setPlayStatus(
-              "1) Open the Spotify app on your phone or computer. 2) Press play on the track that just opened. Next time, leave Spotify open so ▶ can control it from Song Matcher.",
+              "1) Open the Spotify app on your phone or computer. 2) Press play on the track that just opened. Or reconnect Spotify for in-browser Premium playback.",
             );
             return;
           }
           setPlayingUi(null, null);
-          setPlayStatus(r.error || "Could not play — open Spotify on your phone or computer and try again.");
+          setPlayStatus(r.error || "Could not play — open Spotify and try again.");
         } catch (e) {
           setPlayingUi(null, null);
-          setPlayStatus("Couldn’t play. Open Spotify on your phone or computer, then try again. (" + e.message + ")");
+          setPlayStatus("Couldn’t play. (" + e.message + ")");
         }
       }
 
@@ -1465,9 +1587,17 @@
         if (me.loggedIn) {
           await refreshSidebar();
           if (!viewMode || viewMode === "library") await openLibrary();
+          void initWebPlayer();
         } else {
           viewMode = null;
           currentProjectId = null;
+          webPlayerReady = false;
+          webDeviceId = null;
+          webPlayerInitPromise = null;
+          if (webPlayer) {
+            try { await webPlayer.disconnect(); } catch (_) { /* ignore */ }
+            webPlayer = null;
+          }
         }
       }
 
@@ -1476,7 +1606,17 @@
         await api("/api/auth/logout", { method: "POST" });
         window.location.href = "/auth/spotify";
       };
-      $("btn-logout").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); await refreshAuth(); };
+      $("btn-logout").onclick = async () => {
+        if (webPlayer) {
+          try { await webPlayer.disconnect(); } catch (_) { /* ignore */ }
+          webPlayer = null;
+        }
+        webPlayerReady = false;
+        webDeviceId = null;
+        webPlayerInitPromise = null;
+        await api("/api/auth/logout", { method: "POST" });
+        await refreshAuth();
+      };
 
       function setActiveSidebar(view, projectId) {
         document.querySelectorAll(".pl-item").forEach((el) => el.classList.remove("active"));

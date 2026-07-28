@@ -1,13 +1,18 @@
 /**
- * Start playback on the user's active Spotify device (Premium).
+ * Start playback on a Spotify device (Premium).
+ * Pass deviceId to target the Song Matcher in-browser Web Playback SDK player.
  * positionMs seeks into the track — used for lyric bridge previews.
  */
 export async function startSpotifyPlayback(
   accessToken: string,
   spotifyId: string,
   positionMs = 0,
+  deviceId?: string,
 ): Promise<void> {
-  const res = await fetch("https://api.spotify.com/v1/me/player/play", {
+  const url = deviceId
+    ? `https://api.spotify.com/v1/me/player/play?device_id=${encodeURIComponent(deviceId)}`
+    : "https://api.spotify.com/v1/me/player/play";
+  const res = await fetch(url, {
     method: "PUT",
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -22,12 +27,12 @@ export async function startSpotifyPlayback(
   const body = await res.text();
   if (res.status === 404) {
     throw new Error(
-      "No active Spotify player. Open the Spotify app (phone or desktop), play anything once, then retry.",
+      "No active Spotify player. Open the Spotify app (phone or desktop), play anything once, then retry — or reconnect Spotify for in-browser playback.",
     );
   }
   if (res.status === 403) {
     throw new Error(
-      "Spotify playback forbidden (Premium required for remote play, or re-connect Spotify to grant playback scopes).",
+      "Spotify playback forbidden (Premium required for full playback, or re-connect Spotify to grant playback scopes).",
     );
   }
   if (res.status === 401) {

@@ -139,12 +139,27 @@ export function registerRoutes(app: Express): void {
     }
   });
 
-  /** Play on user's active Spotify device (Premium), optional seek for lyric bridges. */
+  /** Access token for Spotify Web Playback SDK (browser player). */
+  app.get("/api/spotify/token", requireAuth, async (req, res) => {
+    try {
+      const user = authed(req);
+      const access_token = await ensureUserAccessToken(user);
+      res.json({
+        access_token,
+        expires_at: user.token_expires_at,
+      });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  /** Play on Song Matcher web player device_id, else active Spotify device (Premium). */
   app.post("/api/spotify/play", requireAuth, async (req, res) => {
     try {
-      const { spotifyId, positionMs } = req.body as {
+      const { spotifyId, positionMs, deviceId } = req.body as {
         spotifyId?: string;
         positionMs?: number;
+        deviceId?: string;
       };
       if (!spotifyId?.trim()) {
         res.status(400).json({ error: "spotifyId required" });
@@ -152,9 +167,14 @@ export function registerRoutes(app: Express): void {
       }
       const token = await ensureUserAccessToken(authed(req));
       const ms = Number(positionMs) || 0;
+      const device = deviceId?.trim() || undefined;
       try {
-        await startSpotifyPlayback(token, spotifyId.trim(), ms);
-        res.json({ ok: true, mode: "device", openUrl: spotifyOpenUrl(spotifyId.trim(), ms) });
+        await startSpotifyPlayback(token, spotifyId.trim(), ms, device);
+        res.json({
+          ok: true,
+          mode: device ? "web" : "device",
+          openUrl: spotifyOpenUrl(spotifyId.trim(), ms),
+        });
       } catch (playErr) {
         const preview = await fetchTrackPreviewUrl(token, spotifyId.trim());
         const msg = playErr instanceof Error ? playErr.message : String(playErr);
