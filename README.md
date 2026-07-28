@@ -137,7 +137,7 @@ docker compose up --build
 - **GetSongBPM** — optional last resort for tempo/key ([getsongbpm.com/api](https://getsongbpm.com/api)); often Cloudflare-blocked from servers.
 - **Genius** — via the `genius-lyrics` package (scrapes lyric pages). Check [Genius API Terms](https://genius.com/static/terms) for your use case. Do **not** rely on Tunebat scraping (fragile / ToS risk); this tool does not implement it.
 
-Use **Fill missing BPM/key** in the UI to re-run the enrich chain for tracks that still lack tempo/Camelot.
+Use **Fill missing BPM/key/energy** in the UI to re-run the enrich chain for tracks that still lack tempo, Camelot, or energy.
 
 ## Project layout
 

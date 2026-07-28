@@ -42,6 +42,14 @@ type MissingRow = {
   title: string;
 };
 
+function isMissingMeta(s: {
+  tempo: number | null;
+  camelot: string | null;
+  energy: number | null;
+}): boolean {
+  return !s.tempo || !String(s.camelot || "").trim() || !s.energy;
+}
+
 export function startLibraryMetaBackfill(): MetaBackfillJob {
   const id = crypto.randomUUID();
   const job: MetaBackfillJob = {
@@ -49,7 +57,7 @@ export function startLibraryMetaBackfill(): MetaBackfillJob {
     status: "running",
     progress: 0,
     progress_total: 0,
-    progress_label: "Finding tracks missing BPM/key…",
+    progress_label: "Finding tracks missing BPM/key/energy…",
     filled: 0,
     still_missing: 0,
     created_at: Date.now(),
@@ -75,7 +83,7 @@ export function startProjectMetaBackfill(projectId: string): MetaBackfillJob {
     status: "running",
     progress: 0,
     progress_total: 0,
-    progress_label: "Finding tracks missing BPM/key…",
+    progress_label: "Finding tracks missing BPM/key/energy…",
     filled: 0,
     still_missing: 0,
     created_at: Date.now(),
@@ -87,7 +95,13 @@ export function startProjectMetaBackfill(projectId: string): MetaBackfillJob {
   void runBackfill(job, async () => {
     const songs = await listSongsForProject(projectId);
     return songs
-      .filter((s) => !s.tempo || !s.camelot)
+      .filter((s) =>
+        isMissingMeta({
+          tempo: s.tempo,
+          camelot: s.camelot,
+          energy: s.energy,
+        }),
+      )
       .map((s) => ({
         spotify_id: s.spotify_id_resolved,
         artist: s.artist,
@@ -106,7 +120,7 @@ async function runBackfill(
     job.progress_total = missing.length;
     if (missing.length === 0) {
       job.status = "done";
-      job.progress_label = "Nothing missing — all tracks have BPM/key.";
+      job.progress_label = "Nothing missing — all tracks have BPM/key/energy.";
       return;
     }
 
@@ -155,7 +169,9 @@ async function runBackfill(
     let filled = 0;
     for (const { track } of resolved) {
       const meta = audioMeta.get(track.id);
-      if (!meta?.tempo) continue;
+      if (!meta) continue;
+      // Persist when we got BPM and/or energy (energy-only fills for existing BPM rows).
+      if (!meta.tempo && !(meta.energy > 0)) continue;
       await updateLibraryAudioMeta(track.id, meta);
       await updateSongAudioMetaBySpotifyId(track.id, meta);
       filled++;

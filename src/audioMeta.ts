@@ -50,13 +50,46 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function hasUsableMeta(m: TrackAudioMeta | undefined): boolean {
+function hasTempo(m: TrackAudioMeta | undefined): boolean {
   return Boolean(m?.tempo);
 }
 
+function hasEnergy(m: TrackAudioMeta | undefined): boolean {
+  return Boolean(m && m.energy > 0);
+}
+
+/** Complete enough to stop looking: BPM plus energy when sources can provide it. */
+function isComplete(m: TrackAudioMeta | undefined): boolean {
+  return hasTempo(m) && hasEnergy(m);
+}
+
+function needsMoreMeta(m: TrackAudioMeta | undefined): boolean {
+  return !isComplete(m);
+}
+
+/** Keep good BPM/key; fill energy/danceability gaps from a later source. */
+function mergeMeta(
+  prev: TrackAudioMeta | undefined,
+  next: TrackAudioMeta,
+): TrackAudioMeta {
+  if (!prev) return next;
+  return {
+    tempo: prev.tempo > 0 ? prev.tempo : next.tempo,
+    camelot: prev.camelot || next.camelot,
+    spotify_key: prev.spotify_key >= 0 ? prev.spotify_key : next.spotify_key,
+    spotify_mode: prev.spotify_mode >= 0 ? prev.spotify_mode : next.spotify_mode,
+    time_signature: prev.time_signature || next.time_signature,
+    energy: prev.energy > 0 ? prev.energy : next.energy,
+    danceability: prev.danceability > 0 ? prev.danceability : next.danceability,
+    bpm_key_source:
+      prev.tempo > 0 ? prev.bpm_key_source : next.bpm_key_source,
+  };
+}
+
 /**
- * BPM + key for each Spotify track id.
+ * BPM + key (+ energy when available) for each Spotify track id.
  * Order: Spotify → ReccoBeats → FreqBlog → Brizm → GetSongBPM.
+ * Later sources can fill energy without overwriting a good BPM/key.
  */
 export async function resolveTrackAudioMeta(
   resolved: ResolvedTrack[],
@@ -72,7 +105,7 @@ export async function resolveTrackAudioMeta(
     for (const [id, af] of spotify) {
       if (af) out.set(id, metaFromSpotify(af));
     }
-    if (out.size === ids.length) return out;
+    if (ids.every((id) => isComplete(out.get(id)))) return out;
   } catch (err) {
     if (!isSpotifyAudioFeaturesForbidden(err)) throw err;
     onStatus?.(
@@ -80,11 +113,11 @@ export async function resolveTrackAudioMeta(
     );
   }
 
-  const needAfterSpotify = ids.filter((id) => !hasUsableMeta(out.get(id)));
+  const needAfterSpotify = ids.filter((id) => needsMoreMeta(out.get(id)));
   if (needAfterSpotify.length > 0) {
     try {
       const recco = await fetchReccoBeatsFeatures(needAfterSpotify);
-      for (const [id, meta] of recco) out.set(id, meta);
+      for (const [id, meta] of recco) out.set(id, mergeMeta(out.get(id), meta));
       onStatus?.(
         `ReccoBeats: got BPM/key for ${[...out.values()].filter((m) => m.bpm_key_source === "reccobeats").length}/${needAfterSpotify.length} missing tracks`,
       );
@@ -95,7 +128,7 @@ export async function resolveTrackAudioMeta(
     }
   }
 
-  const missingAfterRecco = ids.filter((id) => !hasUsableMeta(out.get(id)));
+  const missingAfterRecco = ids.filter((id) => needsMoreMeta(out.get(id)));
   if (missingAfterRecco.length > 0) {
     // FreqBlog keys often live in FREQBLOG_API_KEY; also accept BRIZM_API_KEY
     // when the user pasted a FreqBlog sk_live_ key there.
@@ -126,7 +159,7 @@ export async function resolveTrackAudioMeta(
           freqKey,
         );
         if (meta) {
-          out.set(id, meta);
+          out.set(id, mergeMeta(out.get(id), meta));
           filled++;
         }
         await sleep(150);
@@ -137,7 +170,7 @@ export async function resolveTrackAudioMeta(
     }
   }
 
-  const missingAfterFreq = ids.filter((id) => !hasUsableMeta(out.get(id)));
+  const missingAfterFreq = ids.filter((id) => needsMoreMeta(out.get(id)));
   if (missingAfterFreq.length > 0) {
     const brizmKey = optionalEnv("BRIZM_API_KEY")?.trim();
     // Skip Brizm when the same key is a FreqBlog sk_live_ key (already tried).
@@ -170,7 +203,7 @@ export async function resolveTrackAudioMeta(
           brizmKey,
         );
         if (meta) {
-          out.set(id, meta);
+          out.set(id, mergeMeta(out.get(id), meta));
           filled++;
         }
         await sleep(200);
@@ -179,7 +212,8 @@ export async function resolveTrackAudioMeta(
     }
   }
 
-  const missing = ids.filter((id) => !hasUsableMeta(out.get(id)));
+  // GetSongBPM only helps BPM/key — skip tracks that already have tempo.
+  const missing = ids.filter((id) => !hasTempo(out.get(id)));
   if (missing.length === 0) return out;
 
   const apiKey = optionalEnv("GETSONGBPM_API_KEY")?.trim();
@@ -204,16 +238,19 @@ export async function resolveTrackAudioMeta(
     onStatus?.(`[GetSongBPM ${i}/${missing.length}] ${row.artist} — ${row.title}`);
     const g = await fetchGetSongBpmMeta(row.artist, row.title, apiKey);
     if (g) {
-      out.set(id, {
-        tempo: g.tempo,
-        camelot: g.camelot,
-        spotify_key: -1,
-        spotify_mode: -1,
-        time_signature: g.time_signature,
-        energy: 0,
-        danceability: 0,
-        bpm_key_source: "getsongbpm",
-      });
+      out.set(
+        id,
+        mergeMeta(out.get(id), {
+          tempo: g.tempo,
+          camelot: g.camelot,
+          spotify_key: -1,
+          spotify_mode: -1,
+          time_signature: g.time_signature,
+          energy: 0,
+          danceability: 0,
+          bpm_key_source: "getsongbpm",
+        }),
+      );
     }
     await sleep(350);
   }

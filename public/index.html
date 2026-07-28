@@ -917,7 +917,7 @@
                 <div class="status" id="job-status" style="margin:0.15rem 0 0"></div>
               </div>
               <div class="detail-actions">
-                <button type="button" id="btn-backfill-meta" class="secondary" hidden>Fill missing BPM/key</button>
+                <button type="button" id="btn-backfill-meta" class="secondary" hidden>Fill missing BPM/key/energy</button>
                 <button type="button" id="btn-export-csv" class="secondary">Download CSV</button>
               </div>
             </div>
@@ -931,7 +931,7 @@
               <div class="track-head">
                 <input type="text" id="lyric-q" placeholder="Search lyrics…" style="width:min(280px,100%)" />
                 <button type="button" id="btn-lyric-search" class="secondary">Search</button>
-                <span class="hint" style="margin:0">Double-click tempo/key to edit · ▶ controls your Spotify app</span>
+                <span class="hint" style="margin:0">Double-click tempo/key to edit · Open Spotify on your phone or computer, then press ▶</span>
               </div>
               <div id="lyric-results" class="hint"></div>
               <p class="status" id="play-status" style="margin:0.25rem 0 0.5rem"></p>
@@ -1205,7 +1205,7 @@
           previewAudio.pause();
           previewAudio.currentTime = 0;
         }
-        setPlayStatus("Sending play command to your Spotify app…");
+        setPlayStatus("Looking for your open Spotify app…");
         try {
           const r = await api("/api/spotify/play", {
             method: "POST",
@@ -1213,10 +1213,10 @@
             body: JSON.stringify({ spotifyId, positionMs }),
           });
           if (r.ok && r.mode === "device") {
-            const t = positionMs ? ` @ ${Math.floor(positionMs / 1000)}s` : "";
+            const t = positionMs ? ` (from ${Math.floor(positionMs / 1000)}s)` : "";
             setPlayingUi(spotifyId, "device");
             setPlayStatus(
-              `Playing on your Spotify app${t}. Sound comes from Spotify (phone/desktop) — check that device isn’t muted.`,
+              `Playing in Spotify${t}. Sound comes from your phone or computer — check that Spotify isn’t muted.`,
             );
             return;
           }
@@ -1225,7 +1225,9 @@
             previewAudio.src = r.previewUrl;
             await previewAudio.play();
             setPlayingUi(spotifyId, "preview");
-            setPlayStatus("Playing 30s preview in this browser (full tracks need the Spotify app).");
+            setPlayStatus(
+              "Playing a 30-second preview in this browser. For the full track: open Spotify, then press ▶ again.",
+            );
             previewAudio.onended = () => {
               if (nowPlayingId === spotifyId) setPlayingUi(null, null);
               setPlayStatus("");
@@ -1237,20 +1239,20 @@
             if (r.needsReauth) {
               $("btn-reauth").hidden = false;
               setPlayStatus(
-                "Need playback permission — click Reconnect Spotify, then keep the Spotify app open and try ▶ again.",
+                "To play from here: 1) Click Reconnect Spotify above and approve access. 2) Open the Spotify app on your phone or computer. 3) Press ▶ again.",
               );
               return;
             }
             setPlayStatus(
-              "Opened in Spotify. In-browser full playback isn’t available without Spotify’s Web Player SDK; ▶ remote-controls your Spotify app.",
+              "1) Open the Spotify app on your phone or computer. 2) Press play on the track that just opened. Next time, leave Spotify open so ▶ can control it from Song Matcher.",
             );
             return;
           }
           setPlayingUi(null, null);
-          setPlayStatus(r.error || "Could not play");
+          setPlayStatus(r.error || "Could not play — open Spotify on your phone or computer and try again.");
         } catch (e) {
           setPlayingUi(null, null);
-          setPlayStatus("Play error: " + e.message);
+          setPlayStatus("Couldn’t play. Open Spotify on your phone or computer, then try again. (" + e.message + ")");
         }
       }
 
@@ -1716,7 +1718,8 @@
         return songsCache.filter((s) => {
           const tempo = Number(s.tempo_override ?? s.tempo) || 0;
           const camelot = String(s.camelot_override || s.camelot || "").trim();
-          return !tempo || !camelot;
+          const energy = Number(s.energy) || 0;
+          return !tempo || !camelot || !energy;
         }).length;
       }
 
@@ -1728,7 +1731,7 @@
           return;
         }
         btn.hidden = false;
-        btn.textContent = `Fill missing BPM/key (${n})`;
+        btn.textContent = `Fill missing BPM/key/energy (${n})`;
         btn.disabled = false;
       }
 
@@ -1737,7 +1740,7 @@
         const js = $("job-status");
         btn.disabled = true;
         btn.hidden = true;
-        js.textContent = "Starting BPM/key backfill…";
+        js.textContent = "Starting BPM/key/energy backfill…";
         try {
           const path =
             viewMode === "library"

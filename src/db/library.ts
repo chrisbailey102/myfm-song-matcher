@@ -80,7 +80,9 @@ export async function countLibraryTracks(): Promise<number> {
 export async function listLibraryTracksMissingMeta(): Promise<LibraryTrack[]> {
   return query<LibraryTrack>(
     `SELECT * FROM library_tracks
-     WHERE tempo = 0 OR tempo IS NULL OR camelot = '' OR camelot IS NULL
+     WHERE tempo = 0 OR tempo IS NULL
+        OR camelot = '' OR camelot IS NULL
+        OR energy = 0 OR energy IS NULL
      ORDER BY artist ASC, title ASC`,
   );
 }
