@@ -148,6 +148,19 @@
       }
       .pl-item:hover { background: rgba(255,255,255,0.55); }
       .pl-item.active { background: rgba(255,255,255,0.95); box-shadow: 0 0 0 1px var(--line); }
+      .pl-item.drop-hover {
+        background: #e8f0fe;
+        box-shadow: 0 0 0 2px var(--accent);
+      }
+      table.mik tbody tr.selected {
+        background: #e8f0fe;
+      }
+      table.mik tbody tr.dragging {
+        opacity: 0.55;
+      }
+      table.mik tbody tr[draggable="true"] {
+        cursor: grab;
+      }
       .pl-item .pl-name {
         font-size: 1rem;
         font-weight: 600;
@@ -497,11 +510,30 @@
       #play-status { min-height: 1.2em; color: var(--muted); font-size: 0.95rem; }
       .play-bar {
         display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin: 0 0 0.5rem;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0.45rem;
+        margin: 0 0 0.65rem;
       }
       .play-bar[hidden] { display: none !important; }
+      .play-bar-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      #spotify-embed-host {
+        width: 100%;
+        min-height: 80px;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #121212;
+      }
+      #spotify-embed-host iframe {
+        display: block;
+        width: 100% !important;
+        border: 0;
+        border-radius: 12px;
+      }
       #btn-stop-play {
         min-width: auto;
         padding: 0.3rem 0.75rem;
@@ -523,7 +555,10 @@
       }
       #lyric-results {
         flex-shrink: 0;
-        max-height: 10rem;
+        height: 20rem;
+        min-height: 8rem;
+        max-height: 70vh;
+        resize: vertical;
         overflow: auto;
         margin: 0 0 0.55rem;
         padding: 0.15rem 0.35rem 0.35rem;
@@ -868,7 +903,7 @@
       <h1>Song Matcher</h1>
       <span id="auth-status" class="hint" style="margin:0">Checking login…</span>
       <button type="button" id="btn-login" hidden>Connect Spotify</button>
-      <button type="button" id="btn-reauth" class="secondary" hidden title="Grant playback permissions">Reconnect Spotify</button>
+      <button type="button" id="btn-reauth" class="secondary" hidden title="Re-authorize Spotify playlist access">Reconnect Spotify</button>
       <button type="button" id="btn-logout" class="secondary" hidden>Log out Spotify</button>
     </div>
 
@@ -924,6 +959,20 @@
                 <button type="button" id="btn-cancel-import" class="secondary">Cancel</button>
               </div>
               <div class="status" id="create-status" hidden></div>
+            </section>
+
+            <section class="panel import-card" aria-labelledby="import-custom-heading">
+              <h2 id="import-custom-heading">Custom playlist</h2>
+              <p class="hint" style="margin-top:0">Create an empty playlist, then drag tracks from Entire Library or other playlists to copy them in. Right-click a track (or Delete / Backspace) to remove it.</p>
+              <div class="row">
+                <label>Title</label>
+                <input type="text" id="custom-playlist-name" placeholder="e.g. Saturday warm-up" />
+              </div>
+              <div class="row">
+                <button type="button" id="btn-create-custom">Create empty playlist</button>
+                <button type="button" id="btn-cancel-import-custom" class="secondary">Cancel</button>
+              </div>
+              <div class="status" id="custom-status" hidden></div>
             </section>
 
             <section class="panel import-card" aria-labelledby="import-excel-heading">
@@ -983,14 +1032,20 @@
               <div class="track-head">
                 <input type="text" id="lyric-q" placeholder="Search lyrics…" style="width:min(280px,100%)" />
                 <button type="button" id="btn-lyric-search" class="secondary">Search</button>
-                <span class="hint" style="margin:0">Double-click tempo/key to edit · ▶ plays in this browser with Spotify Premium (or opens your Spotify app)</span>
+                <span class="hint" style="margin:0">Drag tracks onto a playlist to copy · right-click or Delete/Backspace to remove · double-click tempo/key · ▶ opens Spotify Embed below</span>
               </div>
               <div id="lyric-results" class="hint"></div>
               <p class="status" id="play-status" style="margin:0.25rem 0 0.5rem"></p>
               <div class="play-bar" id="play-bar" hidden>
-                <button type="button" id="btn-stop-play" class="secondary">Stop</button>
+                <div id="spotify-embed-host">
+                  <div id="spotify-embed"></div>
+                </div>
+                <div class="play-bar-actions">
+                  <button type="button" id="btn-stop-play" class="secondary">Pause</button>
+                  <span class="hint" style="margin:0">Log in inside the player if Spotify asks — Free gets previews, Premium gets full tracks.</span>
+                </div>
               </div>
-              <audio id="preview-audio" preload="none"></audio>
+              <audio id="preview-audio" preload="none" hidden></audio>
               <div class="mik-wrap" id="songs-table"></div>
             </div>
 
@@ -1031,6 +1086,9 @@
       <button type="button" id="ctx-rename" role="menuitem">Rename</button>
       <button type="button" id="ctx-delete" class="danger" role="menuitem">Delete</button>
     </div>
+    <div id="track-ctx" class="ctx-menu" role="menu" hidden>
+      <button type="button" id="ctx-remove-track" class="danger" role="menuitem">Remove from playlist</button>
+    </div>
     </div><!-- #spotify-app -->
 
     <script>
@@ -1046,16 +1104,17 @@
       let pairSort = { key: "lyric_score", dir: -1 };
       let previewAudio = null;
       let nowPlayingId = null;
-      let playMode = null; // 'web' | 'device' | 'preview' | null
-      let webPlayer = null;
-      let webDeviceId = null;
-      let webPlayerReady = false;
-      let webPlayerInitPromise = null;
+      let playMode = null; // 'embed' | null
+      let embedController = null;
+      let embedControllerPromise = null;
+      let embedShown = false;
       let allowInlineEdit = true;
       let keyFilter = null; // e.g. "8B" or null = all
       let awaitImportSuccessFor = null; // project id — show one-shot success when enrich finishes
       let importSuccessTimer = null;
       let backfillPollTimer = null;
+      let selectedSongId = null;
+      let ctxTrackId = null;
 
       /** Mixed In Key Camelot wheel hues (12 at top, clockwise). Outer B = saturated, inner A = pastel. */
       const CAMELOT_B = {
@@ -1270,13 +1329,18 @@
       function setPlayingUi(spotifyId, mode) {
         nowPlayingId = spotifyId || null;
         playMode = mode || null;
-        $("play-bar").hidden = !nowPlayingId;
+        if (nowPlayingId || embedShown) {
+          embedShown = true;
+          $("play-bar").hidden = false;
+        } else {
+          $("play-bar").hidden = true;
+        }
         document.querySelectorAll("button.play[data-play]").forEach((btn) => {
           const id = btn.getAttribute("data-play");
           const on = Boolean(nowPlayingId && id === nowPlayingId);
           btn.classList.toggle("is-playing", on);
           btn.textContent = on ? "■" : "▶";
-          btn.title = on ? "Stop" : "Play";
+          btn.title = on ? "Pause" : "Play in Spotify Embed";
         });
       }
 
@@ -1285,163 +1349,77 @@
           previewAudio.pause();
           previewAudio.currentTime = 0;
         }
-        const mode = playMode;
-        const wasSpotify = mode === "device" || mode === "web";
+        try {
+          embedController?.pause?.();
+        } catch (_) { /* ignore */ }
         setPlayingUi(null, null);
-        if (wasSpotify) {
-          try {
-            if (webPlayer && mode === "web") {
-              try { await webPlayer.pause(); } catch (_) { /* fall through */ }
-            }
-            await api("/api/spotify/pause", { method: "POST" });
-            setPlayStatus("Stopped.");
-          } catch (e) {
-            setPlayStatus("Stopped locally. Spotify pause: " + e.message);
-          }
-        } else {
-          setPlayStatus("Stopped.");
-        }
+        setPlayStatus("Paused.");
       }
 
-      function loadSpotifySdk() {
+      function loadSpotifyIframeApi() {
         return new Promise((resolve, reject) => {
-          if (window.Spotify?.Player) {
-            resolve();
+          if (window.__spotifyIframeApi) {
+            resolve(window.__spotifyIframeApi);
             return;
           }
-          const prev = window.onSpotifyWebPlaybackSDKReady;
-          window.onSpotifyWebPlaybackSDKReady = () => {
-            if (typeof prev === "function") prev();
-            resolve();
+          const prev = window.onSpotifyIframeApiReady;
+          window.onSpotifyIframeApiReady = (IFrameAPI) => {
+            window.__spotifyIframeApi = IFrameAPI;
+            if (typeof prev === "function") prev(IFrameAPI);
+            resolve(IFrameAPI);
           };
-          if (!document.getElementById("spotify-player-sdk")) {
+          if (!document.getElementById("spotify-iframe-api")) {
             const s = document.createElement("script");
-            s.id = "spotify-player-sdk";
-            s.src = "https://sdk.scdn.co/spotify-player.js";
+            s.id = "spotify-iframe-api";
+            s.src = "https://open.spotify.com/embed/iframe-api/v1";
             s.async = true;
-            s.onerror = () => reject(new Error("Could not load Spotify Web Playback SDK"));
-            document.head.appendChild(s);
+            s.onerror = () => reject(new Error("Could not load Spotify Embed API"));
+            document.body.appendChild(s);
           }
-          setTimeout(() => {
-            if (window.Spotify?.Player) resolve();
-          }, 0);
         });
       }
 
-      async function waitForWebDevice(timeoutMs = 10000) {
-        const start = Date.now();
-        while (!webDeviceId && Date.now() - start < timeoutMs) {
-          await new Promise((r) => setTimeout(r, 120));
-        }
-        return Boolean(webDeviceId);
-      }
-
-      /** Confirm the SDK is actually playing this track (API 204 can be silent). */
-      async function verifyWebPlayback(spotifyId) {
-        if (!webPlayer) return { ok: false, reason: "no player" };
-        for (let i = 0; i < 10; i++) {
-          await new Promise((r) => setTimeout(r, 300));
-          let state = null;
-          try {
-            state = await webPlayer.getCurrentState();
-          } catch (_) {
-            continue;
-          }
-          if (!state) continue;
-          const uri = state.track_window?.current_track?.uri || "";
-          const id = uri.replace("spotify:track:", "");
-          if (id !== spotifyId) continue;
-          if (state.paused) {
-            // Common after transfer without activateElement — try resume
-            try { await webPlayer.resume(); } catch (_) { /* ignore */ }
-            continue;
-          }
-          const name = state.track_window?.current_track?.name || "";
-          const pos = Math.floor((state.position || 0) / 1000);
-          return { ok: true, name, position: pos };
-        }
-        return { ok: false, reason: "player connected but no audible playback state" };
-      }
-
-      async function initWebPlayer() {
-        if (webPlayer && webDeviceId) return true;
-        if (webPlayerInitPromise) return webPlayerInitPromise;
-        webPlayerInitPromise = (async () => {
-          try {
-            await loadSpotifySdk();
-            if (webPlayer) {
-              try { await webPlayer.disconnect(); } catch (_) { /* ignore */ }
-              webPlayer = null;
-              webDeviceId = null;
-              webPlayerReady = false;
+      async function ensureEmbedController() {
+        if (embedController) return embedController;
+        if (embedControllerPromise) return embedControllerPromise;
+        embedControllerPromise = (async () => {
+          const IFrameAPI = await loadSpotifyIframeApi();
+          return new Promise((resolve, reject) => {
+            const el = $("spotify-embed");
+            if (!el) {
+              reject(new Error("Embed host missing"));
+              return;
             }
-            webPlayer = new window.Spotify.Player({
-              name: "Song Matcher",
-              getOAuthToken: (cb) => {
-                api("/api/spotify/token")
-                  .then((t) => cb(t.access_token))
-                  .catch(() => cb(""));
-              },
-              volume: 0.9,
-            });
-            webPlayer.addListener("ready", ({ device_id }) => {
-              webDeviceId = device_id;
-              webPlayerReady = true;
-              console.info("Song Matcher Spotify web player ready", device_id);
-            });
-            webPlayer.addListener("not_ready", () => {
-              webPlayerReady = false;
-              webDeviceId = null;
-            });
-            webPlayer.addListener("authentication_error", () => {
-              webPlayerReady = false;
-              $("btn-reauth").hidden = false;
-              setPlayStatus(
-                "In-browser playback needs updated Spotify permission — click Reconnect Spotify above, then try ▶ again.",
-              );
-            });
-            webPlayer.addListener("account_error", () => {
-              webPlayerReady = false;
-              setPlayStatus(
-                "In-browser full playback needs Spotify Premium. You can still use previews when available, or open the Spotify app.",
-              );
-            });
-            webPlayer.addListener("playback_error", ({ message }) => {
-              setPlayStatus("Spotify playback error: " + (message || "unknown"));
-            });
-            webPlayer.addListener("player_state_changed", (state) => {
-              if (!state || playMode !== "web") return;
-              const track = state.track_window?.current_track;
-              if (!track) return;
-              const id = String(track.uri || "").replace("spotify:track:", "");
-              if (state.paused) {
-                if (nowPlayingId === id) {
-                  setPlayStatus(`Paused in Song Matcher — ${track.name || "track"}.`);
+            // Placeholder URI — replaced on first ▶ click
+            const options = {
+              width: "100%",
+              height: 80,
+              uri: "spotify:track:11dFghVXANMlKmJXsNCbNl",
+            };
+            IFrameAPI.createController(el, options, (controller) => {
+              embedController = controller;
+              controller.addListener("playback_started", (e) => {
+                const uri = e?.data?.playingURI || "";
+                const id = String(uri).replace(/^spotify:track:/, "");
+                if (id) {
+                  setPlayingUi(id, "embed");
+                  setPlayStatus("Playing in Spotify Embed below.");
                 }
-                return;
-              }
-              nowPlayingId = id;
-              const pos = Math.floor((state.position || 0) / 1000);
-              setPlayStatus(
-                `Playing in Song Matcher — ${track.name || "track"} (${pos}s). Sound should be from this tab.`,
-              );
-              setPlayingUi(id, "web");
+              });
+              controller.addListener("playback_update", (e) => {
+                if (!e?.data || playMode !== "embed") return;
+                if (e.data.isPaused && nowPlayingId) {
+                  // Keep selection; user may resume from the embed UI
+                }
+              });
+              resolve(controller);
             });
-            const ok = await webPlayer.connect();
-            if (!ok) {
-              webPlayerReady = false;
-              console.warn("Spotify web player connect() returned false");
-              return false;
-            }
-            await waitForWebDevice(10000);
-            return Boolean(webDeviceId);
-          } catch (e) {
-            webPlayerInitPromise = null;
-            console.warn("Web player init failed", e);
-            return false;
-          }
-        })();
-        return webPlayerInitPromise;
+          });
+        })().catch((e) => {
+          embedControllerPromise = null;
+          throw e;
+        });
+        return embedControllerPromise;
       }
 
       function parseClock(mmss) {
@@ -1468,20 +1446,10 @@
         return body;
       }
 
-      async function playViaApi(spotifyId, positionMs, deviceId) {
-        const payload = { spotifyId, positionMs };
-        if (deviceId) payload.deviceId = deviceId;
-        return api("/api/spotify/play", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-      }
-
-      /** Prefer in-browser Web Player (Premium), then Spotify app, then 30s preview, else open Spotify. */
+      /** Play via Spotify Embed (no Web Playback SDK / Premium device transfer). */
       async function playTrack(spotifyId, positionMs = 0) {
         if (!spotifyId) return;
-        if (nowPlayingId === spotifyId) {
+        if (nowPlayingId === spotifyId && playMode === "embed") {
           await stopPlayback();
           return;
         }
@@ -1490,89 +1458,39 @@
           previewAudio.currentTime = 0;
         }
 
-        // Must run inside the click gesture so the browser allows audio.
-        setPlayStatus("Starting in-browser Spotify player…");
-        const webOk = await initWebPlayer();
-        if (webPlayer?.activateElement) {
-          try { await webPlayer.activateElement(); } catch (_) { /* older SDK */ }
-        }
-        try { await webPlayer?.setVolume?.(0.9); } catch (_) { /* ignore */ }
+        embedShown = true;
+        $("play-bar").hidden = false;
+        const startAt = Math.max(0, Math.floor(Number(positionMs) / 1000) || 0);
+        setPlayStatus(startAt ? `Loading track from ${startAt}s…` : "Loading Spotify Embed…");
 
         try {
-          let r = { ok: false };
-
-          if (webOk && webDeviceId) {
-            setPlayStatus("Sending play to Song Matcher player…");
-            r = await playViaApi(spotifyId, positionMs, webDeviceId);
-            if (r.ok && r.mode === "web") {
-              setPlayStatus("Checking that audio is actually playing…");
-              const verified = await verifyWebPlayback(spotifyId);
-              if (verified.ok) {
-                const t = positionMs ? ` (from ${Math.floor(positionMs / 1000)}s)` : "";
-                setPlayingUi(spotifyId, "web");
-                setPlayStatus(
-                  `Playing in Song Matcher${t}${verified.name ? ` — ${verified.name}` : ""}. Sound should be from this browser tab.`,
-                );
-                return;
-              }
-              // Silent “success” — don’t lie to the user; fall back.
-              setPlayStatus(
-                "Browser player connected but no sound detected. Trying your Spotify app / preview…",
-              );
-              try { await webPlayer.pause(); } catch (_) { /* ignore */ }
-              r = { ok: false, error: verified.reason || "silent web playback" };
-            }
+          const controller = await ensureEmbedController();
+          const uri = `spotify:track:${spotifyId}`;
+          if (typeof controller.loadEntity === "function") {
+            controller.loadEntity(uri, false, startAt);
+          } else {
+            controller.loadUri(uri, false, startAt);
           }
-
-          // Phone / desktop Spotify app
-          const r2 = await playViaApi(spotifyId, positionMs);
-          if (r2.ok && r2.mode === "device") {
-            const t = positionMs ? ` (from ${Math.floor(positionMs / 1000)}s)` : "";
-            setPlayingUi(spotifyId, "device");
-            setPlayStatus(
-              `Playing in Spotify${t}. Sound comes from your phone or computer — check that Spotify isn’t muted.`,
-            );
-            return;
-          }
-          Object.assign(r, r2);
-
-          if (r.previewUrl && !positionMs) {
-            if (!previewAudio) previewAudio = $("preview-audio");
-            previewAudio.src = r.previewUrl;
-            await previewAudio.play();
-            setPlayingUi(spotifyId, "preview");
-            setPlayStatus(
-              "Playing a 30-second preview in this browser. Full tracks need Spotify Premium (in-app) or the Spotify app.",
-            );
-            previewAudio.onended = () => {
-              if (nowPlayingId === spotifyId) setPlayingUi(null, null);
-              setPlayStatus("");
-            };
-            return;
-          }
-          if (r.openUrl) {
-            window.open(r.openUrl, "_blank", "noopener");
-            if (r.needsReauth) {
-              $("btn-reauth").hidden = false;
-              setPlayStatus(
-                "To play here: 1) Click Reconnect Spotify above and approve access. 2) Spotify Premium required for in-browser play. 3) Press ▶ again.",
-              );
-              return;
-            }
-            setPlayStatus(
-              "Couldn’t get audible playback in this tab. Opened the track in Spotify — press play there, or try Chrome/Firefox with Premium.",
-            );
-            return;
-          }
-          setPlayingUi(null, null);
-          setPlayStatus(r.error || "Could not play — open Spotify and try again.");
+          // Same user-gesture chain as the ▶ click when the API is already warm.
+          try {
+            controller.play();
+          } catch (_) { /* user can press play in the embed */ }
+          setPlayingUi(spotifyId, "embed");
+          setPlayStatus(
+            startAt
+              ? `Spotify Embed ready — playing from ${startAt}s (press play in the player if your browser blocks autoplay).`
+              : "Spotify Embed ready — press play in the player if needed.",
+          );
         } catch (e) {
           setPlayingUi(null, null);
-          setPlayStatus("Couldn’t play. (" + e.message + ")");
+          setPlayStatus("Couldn’t load Spotify Embed. (" + e.message + ")");
         }
       }
 
       $("btn-stop-play").onclick = () => void stopPlayback();
+
+      // Warm the Embed API after login so the first ▶ is snappier.
+      void loadSpotifyIframeApi().catch(() => {});
 
       function sortBy(rows, key, dir, getter) {
         const g = getter || ((r) => r[key]);
@@ -1656,17 +1574,16 @@
         if (me.loggedIn) {
           await refreshSidebar();
           if (!viewMode || viewMode === "library") await openLibrary();
-          // Don't init web player here — browsers block audio unless started from a click.
+          void ensureEmbedController().catch(() => {});
         } else {
           viewMode = null;
           currentProjectId = null;
-          webPlayerReady = false;
-          webDeviceId = null;
-          webPlayerInitPromise = null;
-          if (webPlayer) {
-            try { await webPlayer.disconnect(); } catch (_) { /* ignore */ }
-            webPlayer = null;
-          }
+          try { embedController?.destroy?.(); } catch (_) { /* ignore */ }
+          embedController = null;
+          embedControllerPromise = null;
+          embedShown = false;
+          nowPlayingId = null;
+          playMode = null;
         }
       }
 
@@ -1676,13 +1593,11 @@
         window.location.href = "/auth/spotify";
       };
       $("btn-logout").onclick = async () => {
-        if (webPlayer) {
-          try { await webPlayer.disconnect(); } catch (_) { /* ignore */ }
-          webPlayer = null;
-        }
-        webPlayerReady = false;
-        webDeviceId = null;
-        webPlayerInitPromise = null;
+        try { embedController?.pause?.(); } catch (_) { /* ignore */ }
+        try { embedController?.destroy?.(); } catch (_) { /* ignore */ }
+        embedController = null;
+        embedControllerPromise = null;
+        embedShown = false;
         await api("/api/auth/logout", { method: "POST" });
         await refreshAuth();
       };
@@ -1705,9 +1620,42 @@
         ctxPlaylistId = null;
       }
 
+      function hideTrackCtx() {
+        const menu = $("track-ctx");
+        menu.classList.remove("open");
+        menu.hidden = true;
+        ctxTrackId = null;
+      }
+
+      function showTrackCtx(ev, songId) {
+        if (viewMode !== "project" || !currentProjectId) return;
+        if (!songId || String(songId).startsWith("lib:")) return;
+        ev.preventDefault();
+        ev.stopPropagation();
+        hidePlaylistCtx();
+        selectedSongId = songId;
+        ctxTrackId = songId;
+        document.querySelectorAll("table.mik tbody tr").forEach((tr) => {
+          tr.classList.toggle("selected", tr.getAttribute("data-id") === songId);
+        });
+        const menu = $("track-ctx");
+        menu.hidden = false;
+        menu.classList.add("open");
+        const pad = 8;
+        const w = menu.offsetWidth || 180;
+        const h = menu.offsetHeight || 44;
+        let x = ev.clientX;
+        let y = ev.clientY;
+        if (x + w > window.innerWidth - pad) x = window.innerWidth - w - pad;
+        if (y + h > window.innerHeight - pad) y = window.innerHeight - h - pad;
+        menu.style.left = `${Math.max(pad, x)}px`;
+        menu.style.top = `${Math.max(pad, y)}px`;
+      }
+
       function showPlaylistCtx(ev, playlistId) {
         ev.preventDefault();
         ev.stopPropagation();
+        hideTrackCtx();
         ctxPlaylistId = playlistId;
         const menu = $("playlist-ctx");
         menu.hidden = false;
@@ -1769,12 +1717,52 @@
           const row = document.createElement("div");
           row.className = "pl-item";
           row.dataset.id = p.id;
-          row.title = "Right-click for rename / delete";
+          row.title = "Drop tracks to copy · right-click for rename / delete";
           row.innerHTML = `
             <span class="pl-name">${esc(p.name)}</span>
             <span class="pl-count">${esc(p.song_count ?? 0)}</span>`;
           row.addEventListener("click", () => openProject(p.id));
           row.addEventListener("contextmenu", (ev) => showPlaylistCtx(ev, p.id));
+          row.addEventListener("dragover", (ev) => {
+            if (![...ev.dataTransfer.types].includes("application/x-song-matcher")) return;
+            ev.preventDefault();
+            ev.dataTransfer.dropEffect = "copy";
+            row.classList.add("drop-hover");
+          });
+          row.addEventListener("dragleave", () => row.classList.remove("drop-hover"));
+          row.addEventListener("drop", async (ev) => {
+            row.classList.remove("drop-hover");
+            ev.preventDefault();
+            let payload = null;
+            try {
+              payload = JSON.parse(ev.dataTransfer.getData("application/x-song-matcher") || "{}");
+            } catch {
+              return;
+            }
+            if (!payload?.songId && !payload?.spotifyId) return;
+            if (payload.fromProjectId === p.id) return;
+            try {
+              const result = await api(`/api/projects/${p.id}/songs`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  songId: payload.songId,
+                  spotifyId: payload.spotifyId,
+                }),
+              });
+              await refreshSidebar();
+              if (currentProjectId === p.id) await openProject(p.id);
+              const st = $("play-status");
+              if (st) {
+                st.hidden = false;
+                st.textContent = result.created
+                  ? `Copied into “${p.name}”`
+                  : `Already in “${p.name}”`;
+              }
+            } catch (e) {
+              alert(e.message || String(e));
+            }
+          });
           list.appendChild(row);
         }
 
@@ -1791,12 +1779,61 @@
         hidePlaylistCtx();
         if (id) await deletePlaylist(id);
       };
-      document.addEventListener("click", hidePlaylistCtx);
-      document.addEventListener("keydown", (ev) => {
-        if (ev.key === "Escape") hidePlaylistCtx();
+
+      async function removeTrackFromPlaylist(songId) {
+        if (viewMode !== "project" || !currentProjectId) return;
+        if (!songId || String(songId).startsWith("lib:")) return;
+        const song = songsCache.find((s) => s.id === songId);
+        const label = song
+          ? `${song.artist || "Unknown"} — ${song.title || "Untitled"}`
+          : "this track";
+        if (!confirm(`Remove “${label}” from this playlist?`)) return;
+        await api(`/api/songs/${encodeURIComponent(songId)}`, { method: "DELETE" });
+        selectedSongId = null;
+        hideTrackCtx();
+        songsCache = songsCache.filter((s) => s.id !== songId);
+        $("detail-count").textContent = `${songsCache.length} track${songsCache.length === 1 ? "" : "s"}`;
+        const countEl = document.querySelector(
+          `.pl-item[data-id="${CSS.escape(currentProjectId)}"] .pl-count`,
+        );
+        if (countEl) countEl.textContent = String(songsCache.length);
+        renderSongs();
+      }
+
+      $("ctx-remove-track").onclick = async () => {
+        const id = ctxTrackId;
+        hideTrackCtx();
+        if (id) await removeTrackFromPlaylist(id);
+      };
+      $("track-ctx").addEventListener("click", (ev) => ev.stopPropagation());
+      $("playlist-ctx").addEventListener("click", (ev) => ev.stopPropagation());
+
+      document.addEventListener("click", () => {
+        hidePlaylistCtx();
+        hideTrackCtx();
       });
-      window.addEventListener("blur", hidePlaylistCtx);
-      window.addEventListener("scroll", hidePlaylistCtx, true);
+      document.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") {
+          hidePlaylistCtx();
+          hideTrackCtx();
+        }
+        const tag = (ev.target && ev.target.tagName) || "";
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || ev.target?.isContentEditable) {
+          return;
+        }
+        if ((ev.key === "Delete" || ev.key === "Backspace") && selectedSongId && viewMode === "project") {
+          ev.preventDefault();
+          void removeTrackFromPlaylist(selectedSongId);
+        }
+      });
+      window.addEventListener("blur", () => {
+        hidePlaylistCtx();
+        hideTrackCtx();
+      });
+      window.addEventListener("scroll", () => {
+        hidePlaylistCtx();
+        hideTrackCtx();
+      }, true);
 
       $("btn-entire-library").onclick = () => openLibrary();
       $("btn-new-playlist").onclick = () => {
@@ -1811,6 +1848,31 @@
         if (!viewMode || viewMode === "library") void openLibrary();
         else if (currentProjectId) void openProject(currentProjectId);
         else $("empty-state").hidden = false;
+      };
+      $("btn-cancel-import-custom").onclick = () => $("btn-cancel-import").click();
+
+      $("btn-create-custom").onclick = async () => {
+        const st = $("custom-status");
+        st.hidden = false;
+        const name = $("custom-playlist-name").value.trim();
+        if (!name) {
+          st.textContent = "Enter a playlist title.";
+          return;
+        }
+        st.textContent = "Creating…";
+        try {
+          const { project } = await api("/api/projects/custom", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name }),
+          });
+          $("custom-playlist-name").value = "";
+          $("import-panel").hidden = true;
+          await refreshSidebar();
+          openProject(project.id);
+        } catch (e) {
+          st.textContent = "Error: " + e.message;
+        }
       };
 
       function openSettings() {
@@ -1945,6 +2007,7 @@
       async function openLibrary() {
         viewMode = "library";
         currentProjectId = null;
+        selectedSongId = null;
         allowInlineEdit = false;
         pairsLoadedFor = null;
         if (pollTimer) clearInterval(pollTimer);
@@ -1964,6 +2027,9 @@
         awaitImportSuccessFor = null;
         $("lyric-results").innerHTML = "";
         setActiveSidebar("library", null);
+        embedShown = true;
+        $("play-bar").hidden = false;
+        void ensureEmbedController().catch(() => {});
         const { songs, count } = await api("/api/library");
         libraryCount = count;
         $("library-count").textContent = String(count);
@@ -1978,6 +2044,7 @@
       async function openProject(id) {
         viewMode = "project";
         currentProjectId = id;
+        selectedSongId = null;
         allowInlineEdit = true;
         pairsLoadedFor = null;
         $("empty-state").hidden = true;
@@ -1992,6 +2059,9 @@
         $("pairs-table").innerHTML = "";
         pairsCache = [];
         setActiveSidebar("project", id);
+        embedShown = true;
+        $("play-bar").hidden = false;
+        void ensureEmbedController().catch(() => {});
         await loadProjectDetail();
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(loadProjectDetail, 3000);
@@ -2167,7 +2237,7 @@
             const camelot = effectiveCamelot(s);
             const unknownArtist = !s.artist || /^unknown$/i.test(s.artist);
             const tempoOverridden = s.tempo_override != null && s.tempo_override !== "";
-            return `<tr data-id="${esc(s.id)}" data-spotify="${esc(s.spotify_id_resolved)}">
+            return `<tr data-id="${esc(s.id)}" data-spotify="${esc(s.spotify_id_resolved)}" draggable="true" class="${selectedSongId === s.id ? "selected" : ""}">
             <td class="play-cell"><button type="button" class="play" data-play="${esc(s.spotify_id_resolved)}" title="Play">▶</button></td>
             <td class="artist${unknownArtist ? " unknown" : ""}">${esc(s.artist || "Unknown")}</td>
             <td class="title">${esc(s.title)}</td>
@@ -2180,7 +2250,36 @@
         el.innerHTML = `<table class="mik"><thead>${thead}</thead><tbody>${tbody}</tbody></table>`;
         bindSortHeaders(el, songSort, renderSongs);
         el.querySelectorAll("[data-play]").forEach((btn) => {
-          btn.onclick = () => playTrack(btn.getAttribute("data-play"), 0);
+          btn.onclick = (ev) => {
+            ev.stopPropagation();
+            playTrack(btn.getAttribute("data-play"), 0);
+          };
+        });
+        el.querySelectorAll("tbody tr").forEach((tr) => {
+          const songId = tr.getAttribute("data-id");
+          const spotifyId = tr.getAttribute("data-spotify");
+          tr.addEventListener("click", (ev) => {
+            if (ev.target.closest("button") || ev.target.closest("input")) return;
+            selectedSongId = songId;
+            el.querySelectorAll("tbody tr").forEach((r) => r.classList.remove("selected"));
+            tr.classList.add("selected");
+          });
+          tr.addEventListener("contextmenu", (ev) => showTrackCtx(ev, songId));
+          tr.addEventListener("dragstart", (ev) => {
+            tr.classList.add("dragging");
+            selectedSongId = songId;
+            el.querySelectorAll("tbody tr").forEach((r) => r.classList.remove("selected"));
+            tr.classList.add("selected");
+            const payload = JSON.stringify({
+              songId,
+              spotifyId,
+              fromProjectId: viewMode === "project" ? currentProjectId : null,
+            });
+            ev.dataTransfer.setData("application/x-song-matcher", payload);
+            ev.dataTransfer.setData("text/plain", `${spotifyId}`);
+            ev.dataTransfer.effectAllowed = "copy";
+          });
+          tr.addEventListener("dragend", () => tr.classList.remove("dragging"));
         });
         el.querySelectorAll("td.editable").forEach((td) => {
           if (!allowInlineEdit) return;

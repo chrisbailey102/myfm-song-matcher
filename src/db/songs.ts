@@ -123,6 +123,126 @@ export async function getSongById(id: string): Promise<DbSong | null> {
   return queryOne<DbSong>(`SELECT * FROM songs WHERE id = $1`, [id]);
 }
 
+export async function deleteSongFromProject(songId: string): Promise<boolean> {
+  const song = await getSongById(songId);
+  if (!song) return false;
+  await exec(`DELETE FROM songs WHERE id = $1`, [songId]);
+  return true;
+}
+
+/** Copy a song row into another project (skips if that Spotify id is already there). */
+export async function copySongToProject(
+  targetProjectId: string,
+  source: DbSong | EnrichedSong,
+): Promise<{ song: DbSong | null; created: boolean }> {
+  const spotifyId =
+    "spotify_id_resolved" in source
+      ? source.spotify_id_resolved
+      : (source as EnrichedSong).spotify_id_resolved;
+  if (!spotifyId) return { song: null, created: false };
+
+  const existing = await queryOne<DbSong>(
+    `SELECT * FROM songs WHERE project_id = $1 AND spotify_id_resolved = $2`,
+    [targetProjectId, spotifyId],
+  );
+  if (existing) return { song: existing, created: false };
+
+  const posRow = await queryOne<{ n: number }>(
+    `SELECT COALESCE(MAX(position), -1)::int + 1 AS n FROM songs WHERE project_id = $1`,
+    [targetProjectId],
+  );
+  const position = posRow?.n ?? 0;
+  const ts = now();
+  const id = newId();
+
+  const artist = source.artist;
+  const title = source.title;
+  const year = "year" in source ? source.year ?? null : null;
+  const locked =
+    "spotify_id_locked" in source ? source.spotify_id_locked ?? null : null;
+  const spotify_url = source.spotify_url ?? null;
+  const spotify_name =
+    "spotify_name" in source ? source.spotify_name ?? title : title;
+  const spotify_artists =
+    "spotify_artists" in source ? source.spotify_artists ?? artist : artist;
+  const duration_ms = "duration_ms" in source ? source.duration_ms ?? 0 : 0;
+  const popularity = "popularity" in source ? source.popularity ?? 0 : 0;
+  const spotify_key = "spotify_key" in source ? source.spotify_key ?? -1 : -1;
+  const spotify_mode = "spotify_mode" in source ? source.spotify_mode ?? -1 : -1;
+  const tempo =
+    "tempo_override" in source && source.tempo_override != null
+      ? Number(source.tempo_override) || Number(source.tempo) || 0
+      : Number(source.tempo) || 0;
+  const tempo_override =
+    "tempo_override" in source ? source.tempo_override ?? null : null;
+  const camelot =
+    "camelot_override" in source && source.camelot_override
+      ? String(source.camelot_override)
+      : String(source.camelot || "");
+  const camelot_override =
+    "camelot_override" in source ? source.camelot_override ?? null : null;
+  const time_signature =
+    "time_signature" in source ? source.time_signature ?? 4 : 4;
+  const energy = "energy" in source ? Number(source.energy) || 0 : 0;
+  const danceability =
+    "danceability" in source ? Number(source.danceability) || 0 : 0;
+  const match_confidence =
+    "match_confidence" in source ? Number(source.match_confidence) || 0 : 0;
+  const needs_review =
+    "needs_review" in source ? Boolean(source.needs_review) : false;
+  const review_reason =
+    "review_reason" in source ? String(source.review_reason || "") : "";
+  const bpm_key_source =
+    "bpm_key_source" in source ? String(source.bpm_key_source || "") : "";
+  const lyrics_source =
+    "lyrics_source" in source ? String(source.lyrics_source || "") : "";
+
+  await exec(
+    `INSERT INTO songs (
+      id, project_id, position, artist, title, year, spotify_id_locked, spotify_id_resolved,
+      spotify_url, spotify_name, spotify_artists, duration_ms, popularity, spotify_key, spotify_mode,
+      tempo, tempo_override, camelot, camelot_override, time_signature, energy, danceability,
+      match_confidence, needs_review, review_reason, bpm_key_source, lyrics_source, created_at, updated_at
+    ) VALUES (
+      $1,$2,$3,$4,$5,$6,$7,$8,
+      $9,$10,$11,$12,$13,$14,$15,
+      $16,$17,$18,$19,$20,$21,$22,
+      $23,$24,$25,$26,$27,$28,$28
+    )`,
+    [
+      id,
+      targetProjectId,
+      position,
+      artist,
+      title,
+      year,
+      locked,
+      spotifyId,
+      spotify_url,
+      spotify_name,
+      spotify_artists,
+      duration_ms,
+      popularity,
+      spotify_key,
+      spotify_mode,
+      tempo,
+      tempo_override,
+      camelot,
+      camelot_override,
+      time_signature,
+      energy,
+      danceability,
+      match_confidence,
+      needs_review,
+      review_reason,
+      bpm_key_source,
+      lyrics_source,
+      ts,
+    ],
+  );
+  return { song: await getSongById(id), created: true };
+}
+
 export async function updateSongOverrides(
   id: string,
   input: { tempo_override?: number | null; camelot_override?: string | null },

@@ -1,5 +1,5 @@
 import type { EnrichedSong } from "../types.js";
-import { exec, now, query } from "./index.js";
+import { exec, now, query, queryOne } from "./index.js";
 
 export type LibraryTrack = {
   spotify_id: string;
@@ -67,6 +67,15 @@ export async function upsertLibraryFromEnriched(
 export async function listLibraryTracks(): Promise<LibraryTrack[]> {
   return query<LibraryTrack>(
     `SELECT * FROM library_tracks ORDER BY artist ASC, title ASC`,
+  );
+}
+
+export async function getLibraryTrack(
+  spotifyId: string,
+): Promise<LibraryTrack | null> {
+  return queryOne<LibraryTrack>(
+    `SELECT * FROM library_tracks WHERE spotify_id = $1`,
+    [spotifyId],
   );
 }
 

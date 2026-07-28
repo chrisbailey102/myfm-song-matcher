@@ -12,14 +12,15 @@ import {
   startProjectMetaBackfill,
 } from "./metaBackfill.js";
 import { createJob, getJobById, listJobsForProject } from "./db/jobs.js";
+import { listSongsForProject, updateSongOverrides, getSongById, copySongToProject, deleteSongFromProject } from "./db/songs.js";
 import {
   createProject,
   deleteProject,
   getProjectById,
   listProjectsWithCounts,
   updateProjectName,
+  touchProject,
 } from "./db/projects.js";
-import { listSongsForProject, updateSongOverrides } from "./db/songs.js";
 import {
   buildSpotifyAuthorizeUrl,
   clearSession,
@@ -256,6 +257,100 @@ export function registerRoutes(app: Express): void {
         return;
       }
       await deleteProject(project.id);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  /** Create an empty custom playlist (no Spotify import). */
+  app.post("/api/projects/custom", requireAuth, async (req, res) => {
+    try {
+      const user = authed(req);
+      const name = String((req.body as { name?: string })?.name || "").trim();
+      if (!name) {
+        res.status(400).json({ error: "Name required" });
+        return;
+      }
+      const project = await createProject({
+        user_id: user.id,
+        name,
+        status: "ready",
+        playlist_name: name,
+      });
+      res.json({ project });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  /** Copy a track into a playlist (from another playlist song id, or library spotify id). */
+  app.post("/api/projects/:id/songs", requireAuth, async (req, res) => {
+    try {
+      const target = await getProjectById(req.params.id);
+      if (!target || target.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Playlist not found" });
+        return;
+      }
+      const { songId, spotifyId } = req.body as {
+        songId?: string;
+        spotifyId?: string;
+      };
+
+      let source: Awaited<ReturnType<typeof getSongById>> | null = null;
+      if (songId && !songId.startsWith("lib:")) {
+        source = await getSongById(songId);
+        if (!source) {
+          res.status(404).json({ error: "Source song not found" });
+          return;
+        }
+        const srcProject = await getProjectById(source.project_id);
+        if (!srcProject || srcProject.user_id !== authed(req).id) {
+          res.status(403).json({ error: "Not allowed" });
+          return;
+        }
+      } else {
+        const sid = (spotifyId || songId?.replace(/^lib:/, "") || "").trim();
+        if (!sid) {
+          res.status(400).json({ error: "songId or spotifyId required" });
+          return;
+        }
+        const { getLibraryTrack } = await import("./db/library.js");
+        const lib = await getLibraryTrack(sid);
+        if (!lib) {
+          res.status(404).json({ error: "Library track not found" });
+          return;
+        }
+        const { libraryToEnriched } = await import("./db/library.js");
+        const enriched = libraryToEnriched(lib);
+        const result = await copySongToProject(target.id, enriched);
+        await touchProject(target.id);
+        res.json({ ok: true, created: result.created, song: result.song });
+        return;
+      }
+
+      const result = await copySongToProject(target.id, source);
+      await touchProject(target.id);
+      res.json({ ok: true, created: result.created, song: result.song });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  app.delete("/api/songs/:id", requireAuth, async (req, res) => {
+    try {
+      const song = await getSongById(req.params.id);
+      if (!song) {
+        res.status(404).json({ error: "Song not found" });
+        return;
+      }
+      const project = await getProjectById(song.project_id);
+      if (!project || project.user_id !== authed(req).id) {
+        res.status(403).json({ error: "Not allowed" });
+        return;
+      }
+      await deleteSongFromProject(song.id);
+      await touchProject(project.id);
       res.json({ ok: true });
     } catch (e) {
       res.status(400).json({ error: e instanceof Error ? e.message : String(e) });

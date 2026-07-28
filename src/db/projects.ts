@@ -20,12 +20,13 @@ export async function createProject(input: {
   playlist_id?: string;
   playlist_name?: string;
   playlist_url?: string;
+  status?: string;
 }): Promise<DbProject> {
   const id = newId();
   const ts = now();
   await exec(
     `INSERT INTO projects (id, user_id, name, brief, playlist_id, playlist_name, playlist_url, status, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'importing', $8, $8)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
     [
       id,
       input.user_id,
@@ -34,6 +35,7 @@ export async function createProject(input: {
       input.playlist_id ?? null,
       input.playlist_name ?? null,
       input.playlist_url ?? null,
+      input.status ?? "importing",
       ts,
     ],
   );
