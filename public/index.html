@@ -1379,7 +1379,7 @@
         });
       }
 
-      async function ensureEmbedController() {
+      async function ensureEmbedController(initialUri) {
         if (embedController) return embedController;
         if (embedControllerPromise) return embedControllerPromise;
         embedControllerPromise = (async () => {
@@ -1390,12 +1390,13 @@
               reject(new Error("Embed host missing"));
               return;
             }
-            // Placeholder URI — replaced on first ▶ click
             const options = {
               width: "100%",
               height: 80,
-              uri: "spotify:track:11dFghVXANMlKmJXsNCbNl",
+              uri: initialUri || undefined,
             };
+            // Avoid Spotify’s demo track (Carly Rae Jepsen) unless we have a real URI.
+            if (!options.uri) delete options.uri;
             IFrameAPI.createController(el, options, (controller) => {
               embedController = controller;
               controller.addListener("playback_started", (e) => {
@@ -1408,9 +1409,6 @@
               });
               controller.addListener("playback_update", (e) => {
                 if (!e?.data || playMode !== "embed") return;
-                if (e.data.isPaused && nowPlayingId) {
-                  // Keep selection; user may resume from the embed UI
-                }
               });
               resolve(controller);
             });
@@ -1464,11 +1462,11 @@
         setPlayStatus(startAt ? `Loading track from ${startAt}s…` : "Loading Spotify Embed…");
 
         try {
-          const controller = await ensureEmbedController();
           const uri = `spotify:track:${spotifyId}`;
+          const controller = await ensureEmbedController(uri);
           if (typeof controller.loadEntity === "function") {
             controller.loadEntity(uri, false, startAt);
-          } else {
+          } else if (typeof controller.loadUri === "function") {
             controller.loadUri(uri, false, startAt);
           }
           // Same user-gesture chain as the ▶ click when the API is already warm.
@@ -1574,7 +1572,7 @@
         if (me.loggedIn) {
           await refreshSidebar();
           if (!viewMode || viewMode === "library") await openLibrary();
-          void ensureEmbedController().catch(() => {});
+          void loadSpotifyIframeApi().catch(() => {});
         } else {
           viewMode = null;
           currentProjectId = null;
@@ -2027,9 +2025,6 @@
         awaitImportSuccessFor = null;
         $("lyric-results").innerHTML = "";
         setActiveSidebar("library", null);
-        embedShown = true;
-        $("play-bar").hidden = false;
-        void ensureEmbedController().catch(() => {});
         const { songs, count } = await api("/api/library");
         libraryCount = count;
         $("library-count").textContent = String(count);
@@ -2059,9 +2054,6 @@
         $("pairs-table").innerHTML = "";
         pairsCache = [];
         setActiveSidebar("project", id);
-        embedShown = true;
-        $("play-bar").hidden = false;
-        void ensureEmbedController().catch(() => {});
         await loadProjectDetail();
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(loadProjectDetail, 3000);
