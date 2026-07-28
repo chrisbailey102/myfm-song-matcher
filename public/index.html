@@ -1322,14 +1322,49 @@
             s.onerror = () => reject(new Error("Could not load Spotify Web Playback SDK"));
             document.head.appendChild(s);
           }
-          // SDK may already be loading
           setTimeout(() => {
             if (window.Spotify?.Player) resolve();
           }, 0);
         });
       }
 
+      async function waitForWebDevice(timeoutMs = 10000) {
+        const start = Date.now();
+        while (!webDeviceId && Date.now() - start < timeoutMs) {
+          await new Promise((r) => setTimeout(r, 120));
+        }
+        return Boolean(webDeviceId);
+      }
+
+      /** Confirm the SDK is actually playing this track (API 204 can be silent). */
+      async function verifyWebPlayback(spotifyId) {
+        if (!webPlayer) return { ok: false, reason: "no player" };
+        for (let i = 0; i < 10; i++) {
+          await new Promise((r) => setTimeout(r, 300));
+          let state = null;
+          try {
+            state = await webPlayer.getCurrentState();
+          } catch (_) {
+            continue;
+          }
+          if (!state) continue;
+          const uri = state.track_window?.current_track?.uri || "";
+          const id = uri.replace("spotify:track:", "");
+          if (id !== spotifyId) continue;
+          if (state.paused) {
+            // Common after transfer without activateElement — try resume
+            try { await webPlayer.resume(); } catch (_) { /* ignore */ }
+            continue;
+          }
+          const name = state.track_window?.current_track?.name || "";
+          const pos = Math.floor((state.position || 0) / 1000);
+          return { ok: true, name, position: pos };
+        }
+        return { ok: false, reason: "player connected but no audible playback state" };
+      }
+
       async function initWebPlayer() {
+        if (webPlayer && webDeviceId) return true;
         if (webPlayerInitPromise) return webPlayerInitPromise;
         webPlayerInitPromise = (async () => {
           try {
@@ -1347,7 +1382,7 @@
                   .then((t) => cb(t.access_token))
                   .catch(() => cb(""));
               },
-              volume: 0.85,
+              volume: 0.9,
             });
             webPlayer.addListener("ready", ({ device_id }) => {
               webDeviceId = device_id;
@@ -1374,14 +1409,36 @@
             webPlayer.addListener("playback_error", ({ message }) => {
               setPlayStatus("Spotify playback error: " + (message || "unknown"));
             });
+            webPlayer.addListener("player_state_changed", (state) => {
+              if (!state || playMode !== "web") return;
+              const track = state.track_window?.current_track;
+              if (!track) return;
+              const id = String(track.uri || "").replace("spotify:track:", "");
+              if (state.paused) {
+                if (nowPlayingId === id) {
+                  setPlayStatus(`Paused in Song Matcher — ${track.name || "track"}.`);
+                }
+                return;
+              }
+              nowPlayingId = id;
+              const pos = Math.floor((state.position || 0) / 1000);
+              setPlayStatus(
+                `Playing in Song Matcher — ${track.name || "track"} (${pos}s). Sound should be from this tab.`,
+              );
+              setPlayingUi(id, "web");
+            });
             const ok = await webPlayer.connect();
             if (!ok) {
               webPlayerReady = false;
               console.warn("Spotify web player connect() returned false");
+              return false;
             }
+            await waitForWebDevice(10000);
+            return Boolean(webDeviceId);
           } catch (e) {
             webPlayerInitPromise = null;
             console.warn("Web player init failed", e);
+            return false;
           }
         })();
         return webPlayerInitPromise;
@@ -1411,6 +1468,16 @@
         return body;
       }
 
+      async function playViaApi(spotifyId, positionMs, deviceId) {
+        const payload = { spotifyId, positionMs };
+        if (deviceId) payload.deviceId = deviceId;
+        return api("/api/spotify/play", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+
       /** Prefer in-browser Web Player (Premium), then Spotify app, then 30s preview, else open Spotify. */
       async function playTrack(spotifyId, positionMs = 0) {
         if (!spotifyId) return;
@@ -1422,51 +1489,53 @@
           previewAudio.pause();
           previewAudio.currentTime = 0;
         }
-        if (!webPlayerReady) {
-          await initWebPlayer();
-          // Give Spotify a moment to register the device
-          if (webDeviceId) await new Promise((r) => setTimeout(r, 400));
+
+        // Must run inside the click gesture so the browser allows audio.
+        setPlayStatus("Starting in-browser Spotify player…");
+        const webOk = await initWebPlayer();
+        if (webPlayer?.activateElement) {
+          try { await webPlayer.activateElement(); } catch (_) { /* older SDK */ }
         }
-        setPlayStatus(
-          webDeviceId
-            ? "Starting playback in Song Matcher…"
-            : "Looking for Spotify playback…",
-        );
+        try { await webPlayer?.setVolume?.(0.9); } catch (_) { /* ignore */ }
+
         try {
-          const body = { spotifyId, positionMs };
-          if (webDeviceId) body.deviceId = webDeviceId;
-          const r = await api("/api/spotify/play", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
-          if (r.ok && (r.mode === "web" || r.mode === "device")) {
+          let r = { ok: false };
+
+          if (webOk && webDeviceId) {
+            setPlayStatus("Sending play to Song Matcher player…");
+            r = await playViaApi(spotifyId, positionMs, webDeviceId);
+            if (r.ok && r.mode === "web") {
+              setPlayStatus("Checking that audio is actually playing…");
+              const verified = await verifyWebPlayback(spotifyId);
+              if (verified.ok) {
+                const t = positionMs ? ` (from ${Math.floor(positionMs / 1000)}s)` : "";
+                setPlayingUi(spotifyId, "web");
+                setPlayStatus(
+                  `Playing in Song Matcher${t}${verified.name ? ` — ${verified.name}` : ""}. Sound should be from this browser tab.`,
+                );
+                return;
+              }
+              // Silent “success” — don’t lie to the user; fall back.
+              setPlayStatus(
+                "Browser player connected but no sound detected. Trying your Spotify app / preview…",
+              );
+              try { await webPlayer.pause(); } catch (_) { /* ignore */ }
+              r = { ok: false, error: verified.reason || "silent web playback" };
+            }
+          }
+
+          // Phone / desktop Spotify app
+          const r2 = await playViaApi(spotifyId, positionMs);
+          if (r2.ok && r2.mode === "device") {
             const t = positionMs ? ` (from ${Math.floor(positionMs / 1000)}s)` : "";
-            setPlayingUi(spotifyId, r.mode);
+            setPlayingUi(spotifyId, "device");
             setPlayStatus(
-              r.mode === "web"
-                ? `Playing in Song Matcher${t}. Sound comes from this browser tab.`
-                : `Playing in Spotify${t}. Sound comes from your phone or computer — check that Spotify isn’t muted.`,
+              `Playing in Spotify${t}. Sound comes from your phone or computer — check that Spotify isn’t muted.`,
             );
             return;
           }
-          // If web device failed, retry without deviceId (phone/desktop app)
-          if (webDeviceId && !r.ok) {
-            const r2 = await api("/api/spotify/play", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ spotifyId, positionMs }),
-            });
-            if (r2.ok && r2.mode === "device") {
-              const t = positionMs ? ` (from ${Math.floor(positionMs / 1000)}s)` : "";
-              setPlayingUi(spotifyId, "device");
-              setPlayStatus(
-                `Playing in Spotify${t}. Sound comes from your phone or computer — check that Spotify isn’t muted.`,
-              );
-              return;
-            }
-            Object.assign(r, r2);
-          }
+          Object.assign(r, r2);
+
           if (r.previewUrl && !positionMs) {
             if (!previewAudio) previewAudio = $("preview-audio");
             previewAudio.src = r.previewUrl;
@@ -1486,12 +1555,12 @@
             if (r.needsReauth) {
               $("btn-reauth").hidden = false;
               setPlayStatus(
-                "To play here: 1) Click Reconnect Spotify above and approve access. 2) Make sure you have Spotify Premium for in-browser play. 3) Press ▶ again.",
+                "To play here: 1) Click Reconnect Spotify above and approve access. 2) Spotify Premium required for in-browser play. 3) Press ▶ again.",
               );
               return;
             }
             setPlayStatus(
-              "1) Open the Spotify app on your phone or computer. 2) Press play on the track that just opened. Or reconnect Spotify for in-browser Premium playback.",
+              "Couldn’t get audible playback in this tab. Opened the track in Spotify — press play there, or try Chrome/Firefox with Premium.",
             );
             return;
           }
@@ -1587,7 +1656,7 @@
         if (me.loggedIn) {
           await refreshSidebar();
           if (!viewMode || viewMode === "library") await openLibrary();
-          void initWebPlayer();
+          // Don't init web player here — browsers block audio unless started from a click.
         } else {
           viewMode = null;
           currentProjectId = null;
