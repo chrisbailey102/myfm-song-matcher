@@ -112,7 +112,6 @@ CREATE TABLE IF NOT EXISTS library_tracks (
 );
 
 CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
-CREATE INDEX IF NOT EXISTS idx_projects_folder ON projects(folder_id);
 CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id);
 CREATE INDEX IF NOT EXISTS idx_songs_project ON songs(project_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);

@@ -88,10 +88,13 @@ export async function migrate(): Promise<void> {
 
   const client = await getPool().connect();
   try {
+    // Baseline schema first (CREATE TABLE IF NOT EXISTS).
+    // Important: schema.sql must not CREATE INDEX on columns that only exist via
+    // later ALTERs on existing databases (e.g. folder_id).
     await runStatements(client, fromFile);
 
-    // Additive migrations for existing DBs (qualified names avoid search_path races)
-    const additive = [
+    // Additive migrations for DBs created before folder_id / sort_order / folders
+    await runStatements(client, [
       `ALTER TABLE ${SEARCH_PATH}.songs ADD COLUMN IF NOT EXISTS lyrics_source TEXT DEFAULT ''`,
       `ALTER TABLE ${SEARCH_PATH}.projects ADD COLUMN IF NOT EXISTS folder_id TEXT`,
       `ALTER TABLE ${SEARCH_PATH}.projects ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`,
@@ -105,8 +108,7 @@ export async function migrate(): Promise<void> {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_projects_folder ON ${SEARCH_PATH}.projects(folder_id)`,
       `CREATE INDEX IF NOT EXISTS idx_folders_user ON ${SEARCH_PATH}.folders(user_id)`,
-    ];
-    await runStatements(client, additive);
+    ]);
 
     // Backfill sort_order once when every playlist is still at the default 0
     await client.query(`
