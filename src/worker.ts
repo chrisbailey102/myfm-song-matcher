@@ -6,7 +6,7 @@ import {
   updateJobProgress,
   claimNextPendingJob,
 } from "./db/jobs.js";
-import { updateProjectStatus, getProjectById } from "./db/projects.js";
+import { updateProjectStatus, getProjectById, updateProjectSpotifyMeta } from "./db/projects.js";
 import {
   replaceProjectSongs,
   listSongsForProject,
@@ -27,7 +27,7 @@ import {
 } from "./pairs.js";
 import { enrichedForPairing } from "./songEffective.js";
 import { ensureUserAccessToken } from "./spotifyAuth.js";
-import { fetchPlaylistTracks } from "./spotifyPlaylist.js";
+import { fetchPlaylistTracks, fetchPlaylistMeta } from "./spotifyPlaylist.js";
 import { fetchBestLyrics } from "./lyrics.js";
 import type { EnrichedSong } from "./types.js";
 
@@ -76,6 +76,15 @@ async function runEnrichJob(jobId: string, projectId: string): Promise<void> {
   const token = await ensureUserAccessToken(user);
 
   await updateJobProgress(jobId, 0, 1, "Loading playlist tracks…");
+  try {
+    const meta = await fetchPlaylistMeta(token, project.playlist_id);
+    await updateProjectSpotifyMeta(projectId, {
+      playlist_name: meta.name,
+      playlist_url: meta.url,
+    });
+  } catch (e) {
+    console.warn("Could not refresh playlist meta:", e);
+  }
   const rows = await fetchPlaylistTracks(token, project.playlist_id);
 
   await updateProjectStatus(projectId, "enriching");

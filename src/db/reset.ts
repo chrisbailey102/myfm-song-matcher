@@ -26,7 +26,7 @@ export async function resetCatalogData(): Promise<CatalogResetCounts> {
   `);
 
   await exec(`
-    TRUNCATE TABLE songs, jobs, projects, library_tracks, lyrics_cache
+    TRUNCATE TABLE songs, jobs, projects, folders, library_tracks, lyrics_cache
   `);
 
   return {

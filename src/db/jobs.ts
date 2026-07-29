@@ -70,3 +70,25 @@ export async function listJobsForProject(projectId: string): Promise<DbJob[]> {
     [projectId],
   );
 }
+
+export async function hasActiveJob(
+  projectId: string,
+  type?: string,
+): Promise<boolean> {
+  if (type) {
+    const row = await queryOne<{ ok: number }>(
+      `SELECT 1::int AS ok FROM jobs
+       WHERE project_id = $1 AND type = $2 AND status IN ('pending', 'running')
+       LIMIT 1`,
+      [projectId, type],
+    );
+    return Boolean(row);
+  }
+  const row = await queryOne<{ ok: number }>(
+    `SELECT 1::int AS ok FROM jobs
+     WHERE project_id = $1 AND status IN ('pending', 'running')
+     LIMIT 1`,
+    [projectId],
+  );
+  return Boolean(row);
+}

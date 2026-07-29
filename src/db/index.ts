@@ -67,6 +67,30 @@ export async function migrate(): Promise<void> {
     // Additive migrations for existing DBs created before new columns/tables
     await client.query(`
       ALTER TABLE songs ADD COLUMN IF NOT EXISTS lyrics_source TEXT DEFAULT '';
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS folder_id TEXT;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
+      CREATE TABLE IF NOT EXISTS folders (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at BIGINT NOT NULL,
+        updated_at BIGINT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_projects_folder ON projects(folder_id);
+      CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id);
+    `);
+    // Backfill sort_order once when every playlist is still at the default 0
+    await client.query(`
+      WITH ranked AS (
+        SELECT id,
+          (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY updated_at DESC) - 1)::int AS rn
+        FROM projects
+      )
+      UPDATE projects p SET sort_order = ranked.rn
+      FROM ranked
+      WHERE p.id = ranked.id
+        AND (SELECT COALESCE(MAX(sort_order), 0) FROM projects) = 0;
     `);
   } finally {
     client.release();

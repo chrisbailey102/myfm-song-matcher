@@ -11,7 +11,7 @@ import {
   startLibraryMetaBackfill,
   startProjectMetaBackfill,
 } from "./metaBackfill.js";
-import { createJob, getJobById, listJobsForProject } from "./db/jobs.js";
+import { createJob, getJobById, listJobsForProject, hasActiveJob } from "./db/jobs.js";
 import { listSongsForProject, updateSongOverrides, getSongById, copySongToProject, deleteSongFromProject } from "./db/songs.js";
 import {
   createProject,
@@ -20,7 +20,18 @@ import {
   listProjectsWithCounts,
   updateProjectName,
   touchProject,
+  moveRootItem,
+  moveProjectInFolder,
+  setProjectFolder,
+  nextRootSortOrder,
 } from "./db/projects.js";
+import {
+  createFolder,
+  getFolderById,
+  listFoldersWithCounts,
+  updateFolderName,
+  deleteFolder,
+} from "./db/folders.js";
 import {
   buildSpotifyAuthorizeUrl,
   clearSession,
@@ -226,8 +237,149 @@ export function registerRoutes(app: Express): void {
   });
 
   app.get("/api/projects", requireAuth, async (req, res) => {
-    const projects = await listProjectsWithCounts(authed(req).id);
-    res.json({ projects });
+    const userId = authed(req).id;
+    const [projects, folders] = await Promise.all([
+      listProjectsWithCounts(userId),
+      listFoldersWithCounts(userId),
+    ]);
+    res.json({ projects, folders });
+  });
+
+  app.post("/api/folders", requireAuth, async (req, res) => {
+    try {
+      const user = authed(req);
+      const name = String((req.body as { name?: string })?.name || "").trim();
+      if (!name) {
+        res.status(400).json({ error: "Name required" });
+        return;
+      }
+      const sort_order = await nextRootSortOrder(user.id);
+      const folder = await createFolder(user.id, name, sort_order);
+      res.json({ folder });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  app.patch("/api/folders/:id", requireAuth, async (req, res) => {
+    try {
+      const folder = await getFolderById(req.params.id);
+      if (!folder || folder.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Folder not found" });
+        return;
+      }
+      const { name } = req.body as { name?: string };
+      if (!name?.trim()) {
+        res.status(400).json({ error: "Name required" });
+        return;
+      }
+      const updated = await updateFolderName(folder.id, name);
+      res.json({ folder: updated });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  app.delete("/api/folders/:id", requireAuth, async (req, res) => {
+    try {
+      const folder = await getFolderById(req.params.id);
+      if (!folder || folder.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Folder not found" });
+        return;
+      }
+      await deleteFolder(folder.id);
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  app.post("/api/folders/:id/move", requireAuth, async (req, res) => {
+    try {
+      const folder = await getFolderById(req.params.id);
+      if (!folder || folder.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Folder not found" });
+        return;
+      }
+      const direction = (req.body as { direction?: string })?.direction;
+      const dir = direction === "up" ? -1 : direction === "down" ? 1 : 0;
+      if (!dir) {
+        res.status(400).json({ error: 'direction must be "up" or "down"' });
+        return;
+      }
+      const moved = await moveRootItem(authed(req).id, "folder", folder.id, dir);
+      res.json({ ok: true, moved });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  app.post("/api/projects/:id/move", requireAuth, async (req, res) => {
+    try {
+      const project = await getProjectById(req.params.id);
+      if (!project || project.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Playlist not found" });
+        return;
+      }
+      const body = req.body as {
+        direction?: string;
+        folderId?: string | null;
+      };
+      if (body.folderId !== undefined) {
+        const folderId = body.folderId;
+        if (folderId) {
+          const folder = await getFolderById(folderId);
+          if (!folder || folder.user_id !== authed(req).id) {
+            res.status(404).json({ error: "Folder not found" });
+            return;
+          }
+        }
+        const updated = await setProjectFolder(
+          project.id,
+          folderId || null,
+          authed(req).id,
+        );
+        res.json({ ok: true, project: updated });
+        return;
+      }
+      const direction = body.direction;
+      const dir = direction === "up" ? -1 : direction === "down" ? 1 : 0;
+      if (!dir) {
+        res.status(400).json({ error: 'direction must be "up" or "down", or pass folderId' });
+        return;
+      }
+      const moved = project.folder_id
+        ? await moveProjectInFolder(authed(req).id, project.id, dir)
+        : await moveRootItem(authed(req).id, "project", project.id, dir);
+      res.json({ ok: true, moved });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  /** Re-fetch tracks from Spotify and re-enrich (Spotify-linked playlists only). */
+  app.post("/api/projects/:id/refresh", requireAuth, async (req, res) => {
+    try {
+      const project = await getProjectById(req.params.id);
+      if (!project || project.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Playlist not found" });
+        return;
+      }
+      if (!project.playlist_id) {
+        res.status(400).json({
+          error: "This playlist isn’t linked to Spotify (custom playlist). Add tracks by dragging.",
+        });
+        return;
+      }
+      if (await hasActiveJob(project.id)) {
+        res.status(409).json({ error: "An update is already running for this playlist." });
+        return;
+      }
+      const job = await createJob(project.id, "enrich");
+      res.json({ ok: true, project, job });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
   });
 
   app.patch("/api/projects/:id", requireAuth, async (req, res) => {
