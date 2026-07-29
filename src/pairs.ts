@@ -22,6 +22,7 @@ export type PairFilters = {
   minLyricScore?: number;
   minHarmonicScore?: number;
   requireBridge?: boolean;
+  /** Single Camelot code or comma/space-separated list (e.g. "8A,8B"). */
   camelot?: string;
   yearMin?: number;
   yearMax?: number;
@@ -49,11 +50,21 @@ function yearOf(s: EnrichedSong): number | null {
   return Number.isFinite(y) ? y : null;
 }
 
+function parseCamelotFilter(raw: string): string[] {
+  return raw
+    .split(/[,\s]+/)
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean);
+}
+
 function passesSongFilters(s: EnrichedSong, f?: PairFilters): boolean {
   if (!f) return true;
   if (f.camelot) {
-    const c = (s.camelot_override || s.camelot || "").toUpperCase();
-    if (c !== f.camelot.toUpperCase()) return false;
+    const allowed = parseCamelotFilter(f.camelot);
+    if (allowed.length) {
+      const c = (s.camelot_override || s.camelot || "").toUpperCase();
+      if (!allowed.includes(c)) return false;
+    }
   }
   const y = yearOf(s);
   if (f.yearMin != null && y != null && y < f.yearMin) return false;

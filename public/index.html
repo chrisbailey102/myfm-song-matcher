@@ -982,7 +982,7 @@
           <div class="camelot-panel">
             <div class="wheel-label">Key filter</div>
             <div id="camelot-wheel" aria-label="Camelot wheel key filter"></div>
-            <div id="key-filter-status">Click a key to filter</div>
+            <div id="key-filter-status">Click keys to multi-select</div>
             <div class="camelot-key-toggle" role="group" aria-label="Key label style">
               <button type="button" class="secondary active" data-key-mode="camelot" title="Camelot codes (8A)">Camelot</button>
               <button type="button" class="secondary" data-key-mode="flat" title="Musical keys with flats">♭</button>
@@ -1142,7 +1142,7 @@
                 </div>
                 <div class="row">
                   <label>Camelot</label>
-                  <input type="text" id="flt-camelot" placeholder="e.g. 8B" style="width:4rem" />
+                  <input type="text" id="flt-camelot" placeholder="8A,8B" style="width:5.5rem" title="Comma-separated Camelot codes" />
                   <label>Year</label>
                   <input type="number" id="flt-year-min" placeholder="from" style="width:5rem" />
                   <input type="number" id="flt-year-max" placeholder="to" style="width:5rem" />
@@ -1206,7 +1206,7 @@
       let embedControllerPromise = null;
       let embedShown = false;
       let allowInlineEdit = true;
-      let keyFilter = null; // e.g. "8B" or null = all
+      let keyFilters = new Set(); // Camelot codes e.g. "8B"; empty = all
       let awaitImportSuccessFor = null; // project id — show one-shot success when enrich finishes
       let importSuccessTimer = null;
       let backfillPollTimer = null;
@@ -1321,29 +1321,88 @@
         return `M ${x0} ${y0} A ${r1} ${r1} 0 ${large} 1 ${x1} ${y1} L ${x2} ${y2} A ${r0} ${r0} 0 ${large} 0 ${x3} ${y3} Z`;
       }
 
-      function setKeyFilter(code) {
-        const next = code && keyFilter === code ? null : code || null;
-        keyFilter = next;
-        updateCamelotWheelSelection();
+      function sortedKeyFilters() {
+        return [...keyFilters].sort((a, b) => {
+          const ma = /^(\d{1,2})([AB])$/.exec(a);
+          const mb = /^(\d{1,2})([AB])$/.exec(b);
+          if (ma && mb) {
+            const na = Number(ma[1]);
+            const nb = Number(mb[1]);
+            if (na !== nb) return na - nb;
+            return ma[2].localeCompare(mb[2]);
+          }
+          return a.localeCompare(b);
+        });
+      }
+
+      function songMatchesKeyFilter(s) {
+        if (!keyFilters.size) return true;
+        return keyFilters.has(effectiveCamelot(s).toUpperCase());
+      }
+
+      function formatKeyFilterList() {
+        return sortedKeyFilters()
+          .map((code) => {
+            const label = formatKeyLabel(code);
+            return label !== code ? `${label} (${code})` : code;
+          })
+          .join(", ");
+      }
+
+      function syncKeyFilterStatus(trackCount) {
         const status = $("key-filter-status");
-        if (!keyFilter) status.textContent = "Click a key to filter";
-        else {
-          const n = songsCache.filter((s) => effectiveCamelot(s).toUpperCase() === keyFilter).length;
-          const label = formatKeyLabel(keyFilter);
-          status.textContent = `Showing ${label}${label !== keyFilter ? ` (${keyFilter})` : ""} · ${n} track${n === 1 ? "" : "s"}`;
+        if (!status) return;
+        if (!keyFilters.size) {
+          status.textContent =
+            trackCount == null
+              ? "Click keys to multi-select"
+              : `All keys · ${trackCount} track${trackCount === 1 ? "" : "s"}`;
+          return;
         }
-        // Keep pair filter camelot field in sync when on a playlist
-        if ($("flt-camelot")) $("flt-camelot").value = keyFilter || "";
+        const labels = formatKeyFilterList();
+        const short =
+          keyFilters.size > 4
+            ? `${sortedKeyFilters()
+                .slice(0, 3)
+                .map((c) => formatKeyLabel(c))
+                .join(", ")} +${keyFilters.size - 3}`
+            : labels;
+        if (trackCount == null) {
+          status.textContent = `Showing ${short}`;
+          return;
+        }
+        status.textContent = `Showing ${short} · ${trackCount} track${trackCount === 1 ? "" : "s"}`;
+      }
+
+      function syncPairCamelotField() {
+        if ($("flt-camelot")) $("flt-camelot").value = sortedKeyFilters().join(",");
+      }
+
+      /** Toggle a Camelot code on the wheel. Pass null/empty to clear all. */
+      function setKeyFilter(code) {
+        if (!code) {
+          keyFilters.clear();
+        } else {
+          const c = String(code).trim().toUpperCase();
+          if (keyFilters.has(c)) keyFilters.delete(c);
+          else keyFilters.add(c);
+        }
+        updateCamelotWheelSelection();
+        syncPairCamelotField();
+        const n = songsCache.filter(songMatchesKeyFilter).length;
+        syncKeyFilterStatus(songsCache.length ? n : null);
         renderSongs();
       }
 
       function updateCamelotWheelSelection() {
         const root = $("camelot-wheel");
         if (!root) return;
+        const active = keyFilters.size > 0;
         root.querySelectorAll("path.key-seg").forEach((p) => {
           const code = p.getAttribute("data-key");
-          p.classList.toggle("selected", !!keyFilter && code === keyFilter);
-          p.classList.toggle("dim", !!keyFilter && code !== keyFilter);
+          const on = active && keyFilters.has(code);
+          p.classList.toggle("selected", on);
+          p.classList.toggle("dim", active && !on);
         });
       }
 
@@ -1354,12 +1413,9 @@
           btn.classList.toggle("active", btn.getAttribute("data-key-mode") === mode);
         });
         buildCamelotWheel(true);
-        if (keyFilter) {
-          const n = songsCache.filter((s) => effectiveCamelot(s).toUpperCase() === keyFilter).length;
-          const label = formatKeyLabel(keyFilter);
-          $("key-filter-status").textContent =
-            `Showing ${label}${label !== keyFilter ? ` (${keyFilter})` : ""} · ${n} track${n === 1 ? "" : "s"}`;
-        }
+        syncKeyFilterStatus(
+          songsCache.length ? songsCache.filter(songMatchesKeyFilter).length : null,
+        );
         renderSongs();
         if (pairsCache.length && typeof renderPairs === "function") renderPairs();
       }
@@ -2571,20 +2627,14 @@
         const el = $("songs-table");
         if (!songsCache.length) {
           el.innerHTML = "<p class='hint' style='padding:1rem'>No songs yet.</p>";
-          $("key-filter-status").textContent = "Click a key to filter";
+          syncKeyFilterStatus(null);
           return;
         }
-        const filtered = keyFilter
-          ? songsCache.filter((s) => effectiveCamelot(s).toUpperCase() === keyFilter)
-          : songsCache;
-        if (keyFilter) {
-          const n = filtered.length;
-          $("key-filter-status").textContent = `Showing ${keyFilter} · ${n} track${n === 1 ? "" : "s"}`;
-        } else {
-          $("key-filter-status").textContent = `All keys · ${songsCache.length} tracks`;
-        }
+        const filtered = songsCache.filter(songMatchesKeyFilter);
+        syncKeyFilterStatus(filtered.length);
         if (!filtered.length) {
-          el.innerHTML = `<p class='hint' style='padding:1rem'>No tracks in ${esc(keyFilter)}. <button type="button" class="secondary" id="btn-clear-key-inline">Show all keys</button></p>`;
+          const labels = formatKeyFilterList() || "selection";
+          el.innerHTML = `<p class='hint' style='padding:1rem'>No tracks in ${esc(labels)}. <button type="button" class="secondary" id="btn-clear-key-inline">Show all keys</button></p>`;
           const b = $("btn-clear-key-inline");
           if (b) b.onclick = () => setKeyFilter(null);
           return;
