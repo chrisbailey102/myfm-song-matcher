@@ -58,39 +58,67 @@ export async function exec(text: string, params?: unknown[]): Promise<void> {
   await query(text, params);
 }
 
+async function runStatements(
+  client: pg.PoolClient,
+  statements: string[],
+): Promise<void> {
+  await client.query(`SET search_path TO ${SEARCH_PATH}`);
+  for (const raw of statements) {
+    const sql = raw.trim();
+    if (!sql || sql.startsWith("--")) continue;
+    await client.query(sql);
+  }
+}
+
 export async function migrate(): Promise<void> {
   const schemaPath = path.join(PROJECT_ROOT, "src", "db", "schema.sql");
-  const sql = fs.readFileSync(schemaPath, "utf8");
+  const altPath = path.join(PROJECT_ROOT, "dist", "db", "schema.sql");
+  const resolved = fs.existsSync(schemaPath)
+    ? schemaPath
+    : fs.existsSync(altPath)
+      ? altPath
+      : schemaPath;
+  const sql = fs.readFileSync(resolved, "utf8");
+
+  // Run one statement at a time — safer on pooled Postgres connections.
+  const fromFile = sql
+    .split(/;\s*\n/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && !s.split("\n").every((l) => l.trim().startsWith("--") || !l.trim()));
+
   const client = await getPool().connect();
   try {
-    await client.query(sql);
-    // Additive migrations for existing DBs created before new columns/tables
-    await client.query(`
-      ALTER TABLE songs ADD COLUMN IF NOT EXISTS lyrics_source TEXT DEFAULT '';
-      ALTER TABLE projects ADD COLUMN IF NOT EXISTS folder_id TEXT;
-      ALTER TABLE projects ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0;
-      CREATE TABLE IF NOT EXISTS folders (
+    await runStatements(client, fromFile);
+
+    // Additive migrations for existing DBs (qualified names avoid search_path races)
+    const additive = [
+      `ALTER TABLE ${SEARCH_PATH}.songs ADD COLUMN IF NOT EXISTS lyrics_source TEXT DEFAULT ''`,
+      `ALTER TABLE ${SEARCH_PATH}.projects ADD COLUMN IF NOT EXISTS folder_id TEXT`,
+      `ALTER TABLE ${SEARCH_PATH}.projects ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 0`,
+      `CREATE TABLE IF NOT EXISTS ${SEARCH_PATH}.folders (
         id TEXT PRIMARY KEY,
-        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES ${SEARCH_PATH}.users(id) ON DELETE CASCADE,
         name TEXT NOT NULL,
         sort_order INTEGER NOT NULL DEFAULT 0,
         created_at BIGINT NOT NULL,
         updated_at BIGINT NOT NULL
-      );
-      CREATE INDEX IF NOT EXISTS idx_projects_folder ON projects(folder_id);
-      CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id);
-    `);
+      )`,
+      `CREATE INDEX IF NOT EXISTS idx_projects_folder ON ${SEARCH_PATH}.projects(folder_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_folders_user ON ${SEARCH_PATH}.folders(user_id)`,
+    ];
+    await runStatements(client, additive);
+
     // Backfill sort_order once when every playlist is still at the default 0
     await client.query(`
       WITH ranked AS (
         SELECT id,
           (ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY updated_at DESC) - 1)::int AS rn
-        FROM projects
+        FROM ${SEARCH_PATH}.projects
       )
-      UPDATE projects p SET sort_order = ranked.rn
+      UPDATE ${SEARCH_PATH}.projects p SET sort_order = ranked.rn
       FROM ranked
       WHERE p.id = ranked.id
-        AND (SELECT COALESCE(MAX(sort_order), 0) FROM projects) = 0;
+        AND (SELECT COALESCE(MAX(sort_order), 0) FROM ${SEARCH_PATH}.projects) = 0
     `);
   } finally {
     client.release();

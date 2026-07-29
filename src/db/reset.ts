@@ -25,9 +25,18 @@ export async function resetCatalogData(): Promise<CatalogResetCounts> {
       (SELECT COUNT(*)::int FROM lyrics_cache) AS lyrics_cache
   `);
 
-  await exec(`
-    TRUNCATE TABLE songs, jobs, projects, folders, library_tracks, lyrics_cache
-  `);
+  // folders may not exist on very old DBs mid-migrate; ignore missing-table
+  try {
+    await exec(`
+      TRUNCATE TABLE songs, jobs, projects, folders, library_tracks, lyrics_cache
+    `);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!/folders/i.test(msg)) throw e;
+    await exec(`
+      TRUNCATE TABLE songs, jobs, projects, library_tracks, lyrics_cache
+    `);
+  }
 
   return {
     projects: row?.projects ?? 0,

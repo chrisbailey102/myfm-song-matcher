@@ -73,8 +73,13 @@ async function main(): Promise<void> {
   });
 
   console.error("Running DB migrate…");
-  await migrate();
-  console.error("Migrate complete");
+  try {
+    await migrate();
+    console.error("Migrate complete");
+  } catch (e) {
+    console.error("DB migrate failed:", e);
+    throw e;
+  }
   startJobWorker();
 }
 

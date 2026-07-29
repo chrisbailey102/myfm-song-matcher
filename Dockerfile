@@ -7,8 +7,11 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 COPY public ./public
-# schema.sql is read from src/db at runtime
-RUN npm run build && npm prune --omit=dev
+# schema.sql is read from src/db at runtime (also copy into dist after build)
+RUN npm run build \
+  && mkdir -p dist/db \
+  && cp src/db/schema.sql dist/db/schema.sql \
+  && npm prune --omit=dev
 
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
