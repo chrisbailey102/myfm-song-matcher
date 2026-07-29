@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type { CatalogRow } from "./types.js";
 import type { SpotifyTrack } from "./spotify.js";
-import { getTrackById } from "./spotify.js";
+import { getTracksByIds } from "./spotify.js";
 import { resolveTrackAudioMeta } from "./audioMeta.js";
 import {
   listLibraryTracksMissingMeta,
@@ -126,40 +126,35 @@ async function runBackfill(
 
     job.progress_label = `Resolving Spotify metadata for ${missing.length} tracks…`;
     const resolved: Array<{ row: CatalogRow; track: SpotifyTrack }> = [];
+    let byId = new Map<string, SpotifyTrack>();
+    try {
+      byId = await getTracksByIds(missing.map((m) => m.spotify_id));
+    } catch (e) {
+      console.warn("Batch Spotify track fetch failed during backfill:", e);
+    }
     for (let i = 0; i < missing.length; i++) {
       const m = missing[i];
       job.progress = i;
       job.progress_label = `Loading ${m.artist} — ${m.title}`;
-      try {
-        const track = await getTrackById(m.spotify_id);
-        resolved.push({
-          row: {
-            artist: m.artist,
-            title: m.title,
-            spotify_id: m.spotify_id,
-            isrc: track.external_ids?.isrc,
-          },
-          track,
-        });
-      } catch {
-        // Keep a stub so artist/title Brizm/GetSongBPM can still run
-        resolved.push({
-          row: {
-            artist: m.artist,
-            title: m.title,
-            spotify_id: m.spotify_id,
-          },
-          track: {
-            id: m.spotify_id,
-            name: m.title,
-            duration_ms: 0,
-            popularity: 0,
-            external_urls: { spotify: "" },
-            artists: [{ name: m.artist }],
-          },
-        });
-      }
-      await new Promise((r) => setTimeout(r, 80));
+      const track =
+        byId.get(m.spotify_id) ??
+        ({
+          id: m.spotify_id,
+          name: m.title,
+          duration_ms: 0,
+          popularity: 0,
+          external_urls: { spotify: "" },
+          artists: [{ name: m.artist }],
+        } satisfies SpotifyTrack);
+      resolved.push({
+        row: {
+          artist: m.artist,
+          title: m.title,
+          spotify_id: m.spotify_id,
+          isrc: track.external_ids?.isrc,
+        },
+        track,
+      });
     }
 
     const audioMeta = await resolveTrackAudioMeta(resolved, (msg) => {

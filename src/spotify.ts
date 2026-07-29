@@ -37,17 +37,52 @@ async function getClientToken(): Promise<string> {
   return cached.access_token;
 }
 
-async function spotifyGet<T>(path: string): Promise<T> {
-  const token = await getClientToken();
-  const url = path.startsWith("http") ? path : `https://api.spotify.com/v1${path}`;
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) {
-    const t = await res.text();
-    throw new SpotifyApiError(res.status, path, t);
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function retryAfterMs(res: Response, attempt: number): number {
+  const raw = res.headers.get("retry-after");
+  if (raw) {
+    const asNum = Number(raw);
+    if (Number.isFinite(asNum) && asNum >= 0) return Math.min(asNum * 1000, 60_000);
+    const asDate = Date.parse(raw);
+    if (Number.isFinite(asDate)) {
+      return Math.min(Math.max(0, asDate - Date.now()), 60_000);
+    }
   }
-  return res.json() as Promise<T>;
+  // Exponential backoff: 1s, 2s, 4s… capped
+  return Math.min(1000 * 2 ** attempt, 30_000);
+}
+
+async function spotifyGet<T>(path: string, maxAttempts = 6): Promise<T> {
+  const url = path.startsWith("http") ? path : `https://api.spotify.com/v1${path}`;
+  let lastStatus = 0;
+  let lastBody = "";
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const token = await getClientToken();
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) return res.json() as Promise<T>;
+    lastStatus = res.status;
+    lastBody = await res.text();
+    const retryable = res.status === 429 || res.status === 502 || res.status === 503;
+    if (!retryable || attempt === maxAttempts - 1) break;
+    const wait = retryAfterMs(res, attempt);
+    console.warn(
+      `Spotify ${res.status} on ${path} — retry ${attempt + 1}/${maxAttempts - 1} in ${Math.round(wait / 1000)}s`,
+    );
+    await sleep(wait);
+  }
+  if (lastStatus === 429) {
+    throw new SpotifyApiError(
+      lastStatus,
+      path,
+      `${lastBody}\n\nSpotify rate limit / daily quota exceeded. Wait a bit and retry Import, or use Fill missing BPM/key later. Development Mode apps share a low quota across all users.`,
+    );
+  }
+  throw new SpotifyApiError(lastStatus, path, lastBody);
 }
 
 export type SpotifyTrack = {
@@ -196,6 +231,30 @@ export async function getTrackById(trackId: string): Promise<SpotifyTrack> {
   return spotifyGet<SpotifyTrack>(
     `/tracks/${encodeURIComponent(trackId)}?${params.toString()}`,
   );
+}
+
+/** Batch fetch tracks (max 50 ids per Spotify request). Missing ids are omitted. */
+export async function getTracksByIds(
+  trackIds: string[],
+): Promise<Map<string, SpotifyTrack>> {
+  const out = new Map<string, SpotifyTrack>();
+  const unique = [...new Set(trackIds.map((id) => id.trim()).filter(Boolean))];
+  const chunk = 50;
+  for (let i = 0; i < unique.length; i += chunk) {
+    const slice = unique.slice(i, i + chunk);
+    const params = new URLSearchParams({
+      ids: slice.join(","),
+      market: "US",
+    });
+    const data = await spotifyGet<{ tracks: (SpotifyTrack | null)[] }>(
+      `/tracks?${params.toString()}`,
+    );
+    for (const t of data.tracks ?? []) {
+      if (t?.id) out.set(t.id, t);
+    }
+    if (i + chunk < unique.length) await sleep(200);
+  }
+  return out;
 }
 
 export async function getAudioFeatures(

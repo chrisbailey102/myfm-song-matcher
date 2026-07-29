@@ -58,13 +58,53 @@ function forbiddenPlaylistMessage(status: number, body: string): string {
   );
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function retryAfterMs(res: Response, attempt: number): number {
+  const raw = res.headers.get("retry-after");
+  if (raw) {
+    const asNum = Number(raw);
+    if (Number.isFinite(asNum) && asNum >= 0) return Math.min(asNum * 1000, 60_000);
+    const asDate = Date.parse(raw);
+    if (Number.isFinite(asDate)) {
+      return Math.min(Math.max(0, asDate - Date.now()), 60_000);
+    }
+  }
+  return Math.min(1000 * 2 ** attempt, 30_000);
+}
+
+async function spotifyUserGet(accessToken: string, url: string, maxAttempts = 6): Promise<Response> {
+  let last: Response | null = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.ok || (res.status !== 429 && res.status !== 502 && res.status !== 503)) {
+      return res;
+    }
+    last = res;
+    if (attempt === maxAttempts - 1) return res;
+    const wait = retryAfterMs(res, attempt);
+    console.warn(
+      `Spotify ${res.status} on playlist fetch — retry ${attempt + 1}/${maxAttempts - 1} in ${Math.round(wait / 1000)}s`,
+    );
+    // Consume body so the connection can close cleanly
+    await res.text().catch(() => undefined);
+    await sleep(wait);
+  }
+  return last!;
+}
+
 export async function fetchPlaylistMeta(
   accessToken: string,
   playlistId: string,
 ): Promise<{ id: string; name: string; url: string }> {
-  const res = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
+  const res = await spotifyUserGet(
+    accessToken,
+    `https://api.spotify.com/v1/playlists/${playlistId}`,
+  );
   if (!res.ok) {
     const body = await res.text();
     if (res.status === 403) throw new Error(forbiddenPlaylistMessage(res.status, body));
@@ -88,9 +128,7 @@ export async function fetchPlaylistTracks(
     `https://api.spotify.com/v1/playlists/${playlistId}/items?limit=50&market=US&additional_types=track`;
 
   while (url) {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
+    const res = await spotifyUserGet(accessToken, url);
     if (!res.ok) {
       throw new Error(forbiddenPlaylistMessage(res.status, await res.text()));
     }
@@ -133,7 +171,7 @@ export async function fetchUserPlaylists(
   let url: string | null = `https://api.spotify.com/v1/me/playlists?limit=${Math.min(limit, 50)}`;
 
   while (url && out.length < limit) {
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    const res = await spotifyUserGet(accessToken, url);
     if (!res.ok) throw new Error(`User playlists failed: ${await res.text()}`);
     const data = (await res.json()) as {
       items: Array<{

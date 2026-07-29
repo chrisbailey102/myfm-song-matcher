@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CatalogRow, EnrichedSong } from "./types.js";
 import {
-  getTrackById,
+  getTracksByIds,
   resolveBestTrack,
   searchTracksRadioHint,
   type SpotifyTrack,
@@ -150,28 +150,15 @@ export function writeEnrichedCsv(songs: EnrichedSong[], outPath: string): void {
   fs.writeFileSync(outPath, csv, "utf8");
 }
 
-async function resolveTrackForRow(row: CatalogRow): Promise<{
-  track: SpotifyTrack;
-  needs_review: boolean;
-  review_reason: string;
-  match_confidence: number;
-}> {
-  if (row.spotify_id?.trim()) {
-    const track = await getTrackById(row.spotify_id.trim());
-    return {
-      track,
-      needs_review: false,
-      review_reason: "locked_spotify_id",
-      match_confidence: 1,
-    };
-  }
-  const candidates = await searchTracksRadioHint(row.artist, row.title, "US");
-  const resolved = resolveBestTrack(row.artist, row.title, candidates);
+function stubTrackFromRow(row: CatalogRow, spotifyId: string): SpotifyTrack {
   return {
-    track: resolved.chosen,
-    needs_review: resolved.needs_review,
-    review_reason: resolved.review_reason,
-    match_confidence: resolved.match_confidence,
+    id: spotifyId,
+    name: row.title,
+    duration_ms: 0,
+    popularity: 0,
+    external_urls: { spotify: `https://open.spotify.com/track/${spotifyId}` },
+    artists: [{ name: row.artist.split(/[;/]/)[0]?.trim() || row.artist }],
+    external_ids: row.isrc ? { isrc: row.isrc } : undefined,
   };
 }
 
@@ -185,15 +172,58 @@ export async function enrichCatalog(
     needs_review: boolean;
     review_reason: string;
     match_confidence: number;
-  }> = [];
-  let i = 0;
-  for (const row of rows) {
-    i++;
-    onProgress?.(i, rows.length, `${row.artist} — ${row.title}`);
-    const r = await resolveTrackForRow(row);
-    resolved.push({ row, ...r });
-    await sleep(120);
+  }> = Array(rows.length);
+
+  const lockedIdx: number[] = [];
+  const searchIdx: number[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].spotify_id?.trim()) lockedIdx.push(i);
+    else searchIdx.push(i);
   }
+
+  // Playlist imports already have Spotify IDs — batch-fetch instead of 1 request/track.
+  if (lockedIdx.length) {
+    onProgress?.(0, rows.length, `Batch-loading ${lockedIdx.length} Spotify tracks…`);
+    const ids = lockedIdx.map((i) => rows[i].spotify_id!.trim());
+    let byId: Map<string, SpotifyTrack>;
+    try {
+      byId = await getTracksByIds(ids);
+    } catch (e) {
+      console.warn("Batch Spotify track fetch failed; using playlist stubs:", e);
+      byId = new Map();
+    }
+    for (const i of lockedIdx) {
+      const row = rows[i];
+      const id = row.spotify_id!.trim();
+      const track = byId.get(id) ?? stubTrackFromRow(row, id);
+      resolved[i] = {
+        row,
+        track,
+        needs_review: !byId.has(id),
+        review_reason: byId.has(id) ? "locked_spotify_id" : "locked_spotify_id_stub",
+        match_confidence: 1,
+      };
+    }
+    onProgress?.(lockedIdx.length, rows.length, `Resolved ${lockedIdx.length} locked tracks`);
+  }
+
+  let done = lockedIdx.length;
+  for (const i of searchIdx) {
+    done++;
+    const row = rows[i];
+    onProgress?.(done, rows.length, `${row.artist} — ${row.title}`);
+    const candidates = await searchTracksRadioHint(row.artist, row.title, "US");
+    const r = resolveBestTrack(row.artist, row.title, candidates);
+    resolved[i] = {
+      row,
+      track: r.chosen,
+      needs_review: r.needs_review,
+      review_reason: r.review_reason,
+      match_confidence: r.match_confidence,
+    };
+    await sleep(200);
+  }
+
   const audioMeta = await resolveTrackAudioMeta(resolved, (msg) => {
     console.error(msg);
     onProgress?.(rows.length, rows.length, msg);
