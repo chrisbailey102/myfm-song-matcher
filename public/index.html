@@ -276,6 +276,39 @@
       .ctx-menu button:hover { background: #f3f4f6; }
       .ctx-menu button.danger { color: var(--danger); }
       .ctx-menu button.danger:hover { background: #fef2f2; }
+      .ctx-submenu {
+        border-top: 1px solid var(--line-soft);
+        margin-top: 0.25rem;
+        padding-top: 0.25rem;
+      }
+      .ctx-submenu-label {
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
+        padding: 0.35rem 0.75rem 0.15rem;
+      }
+      .ctx-submenu button.ctx-folder-choice {
+        padding-left: 1.1rem;
+      }
+      .ctx-submenu button.ctx-folder-choice.current {
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .pl-item.dragging,
+      .pl-folder-head.dragging {
+        opacity: 0.45;
+      }
+      .pl-item[draggable="true"] {
+        cursor: grab;
+      }
+      .sidebar-head.drop-hover {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+        border-radius: 8px;
+        background: #e8f0fe;
+      }
       .main-pane {
         padding: 0.85rem 1.25rem 1rem;
         overflow: hidden;
@@ -961,20 +994,33 @@
         margin: 0 0 0.75rem;
         min-height: 1.2em;
       }
+      .site-gate-card a.btn,
+      .site-gate-card #site-gate-login {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        box-sizing: border-box;
+        text-decoration: none;
+        background: var(--accent);
+        color: #fff;
+        border: 0;
+        border-radius: 8px;
+        padding: 0.7rem 1rem;
+        font-weight: 600;
+        font-size: 0.95rem;
+      }
       #spotify-app[hidden] { display: none !important; }
     </style>
   </head>
   <body>
-    <div id="site-gate" class="site-gate">
-      <form class="site-gate-card" id="site-gate-form">
+    <div id="site-gate" class="site-gate" hidden>
+      <div class="site-gate-card">
         <h1>Song Matcher</h1>
-        <p class="hint">Enter the On The Sly site password. If you’re already signed in on dashboard.onthesly.com, refresh — this should unlock automatically.</p>
-        <label for="site-password">Password</label>
-        <input type="text" name="username" value="onthesly" autocomplete="username" hidden aria-hidden="true" tabindex="-1" />
-        <input type="password" id="site-password" name="password" autocomplete="current-password" required autofocus />
+        <p class="hint">Sign in on the team hub to unlock Song Matcher (and all On The Sly tools).</p>
         <p class="site-gate-error" id="site-gate-error"></p>
-        <button type="submit" id="site-gate-submit">Continue</button>
-      </form>
+        <a id="site-gate-login" class="btn" href="https://dashboard.onthesly.com/">Go to dashboard login</a>
+      </div>
     </div>
 
     <div id="spotify-app" hidden>
@@ -1173,7 +1219,10 @@
       <button type="button" id="ctx-refresh" role="menuitem">Update from Spotify</button>
       <button type="button" id="ctx-move-up" role="menuitem">Move up</button>
       <button type="button" id="ctx-move-down" role="menuitem">Move down</button>
-      <button type="button" id="ctx-move-to-folder" role="menuitem">Move to folder…</button>
+      <div id="ctx-move-folder-group" class="ctx-submenu" hidden>
+        <div class="ctx-submenu-label">Move to folder</div>
+        <div id="ctx-folder-choices"></div>
+      </div>
       <button type="button" id="ctx-remove-from-folder" role="menuitem">Remove from folder</button>
       <button type="button" id="ctx-delete" class="danger" role="menuitem">Delete</button>
     </div>
@@ -1687,44 +1736,34 @@
         $("spotify-app").hidden = show;
       }
 
+      function shouldRedirectToDashboardLogin() {
+        const host = location.hostname.toLowerCase();
+        return host === "onthesly.com" || host.endsWith(".onthesly.com");
+      }
+
+      function buildDashboardLoginUrl() {
+        return (
+          "https://dashboard.onthesly.com/?next=" +
+          encodeURIComponent(location.href)
+        );
+      }
+
       async function checkSiteAuth() {
-        const r = await fetch("/api/site-auth/status", { credentials: "same-origin" });
+        const r = await fetch("/api/auth/status", { credentials: "same-origin" });
         const st = await r.json().catch(() => ({}));
         if (!st.enabled || st.authenticated) {
           showSiteGate(false);
           return true;
         }
+        const login = $("site-gate-login");
+        if (login) login.href = buildDashboardLoginUrl();
+        if (shouldRedirectToDashboardLogin()) {
+          location.replace(buildDashboardLoginUrl());
+          return false;
+        }
         showSiteGate(true);
         return false;
       }
-
-      $("site-gate-form").onsubmit = async (ev) => {
-        ev.preventDefault();
-        const errEl = $("site-gate-error");
-        const btn = $("site-gate-submit");
-        errEl.textContent = "";
-        btn.disabled = true;
-        try {
-          const r = await fetch("/api/site-auth/login", {
-            method: "POST",
-            credentials: "same-origin",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ password: $("site-password").value }),
-          });
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok) {
-            errEl.textContent = data.message || "Invalid password";
-            return;
-          }
-          $("site-password").value = "";
-          showSiteGate(false);
-          await refreshAuth();
-        } catch (e) {
-          errEl.textContent = e.message || "Login failed";
-        } finally {
-          btn.disabled = false;
-        }
-      };
 
       async function refreshAuth() {
         const me = await api("/api/auth/me");
@@ -1841,7 +1880,31 @@
         const p = playlistsCache.find((x) => x.id === playlistId);
         $("ctx-refresh").hidden = !p?.playlist_id;
         $("ctx-remove-from-folder").hidden = !p?.folder_id;
-        $("ctx-move-to-folder").hidden = !foldersCache.length;
+
+        const group = $("ctx-move-folder-group");
+        const choices = $("ctx-folder-choices");
+        choices.innerHTML = "";
+        if (!foldersCache.length) {
+          group.hidden = true;
+        } else {
+          group.hidden = false;
+          const sorted = [...foldersCache].sort((a, b) =>
+            String(a.name).localeCompare(String(b.name), undefined, { sensitivity: "base" }),
+          );
+          for (const f of sorted) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "ctx-folder-choice" + (p?.folder_id === f.id ? " current" : "");
+            btn.setAttribute("role", "menuitem");
+            btn.textContent = p?.folder_id === f.id ? `${f.name} (current)` : f.name;
+            btn.disabled = p?.folder_id === f.id;
+            btn.onclick = async () => {
+              hidePlaylistCtx();
+              await assignPlaylistToFolder(playlistId, f.id);
+            };
+            choices.appendChild(btn);
+          }
+        }
         placeCtxMenu($("playlist-ctx"), ev);
       }
 
@@ -1915,39 +1978,22 @@
         setActiveSidebar(viewMode, currentProjectId);
       }
 
-      async function movePlaylistToFolder(id) {
-        if (!foldersCache.length) {
-          alert("Create a folder first (folder button next to +).");
-          return;
-        }
-        const choices = foldersCache.map((f, i) => `${i + 1}. ${f.name}`).join("\n");
-        const answer = prompt(`Move to which folder?\n\n${choices}\n\nEnter number:`);
-        if (!answer) return;
-        const idx = Number(answer) - 1;
-        const folder = foldersCache[idx];
-        if (!folder) {
-          alert("Invalid folder number.");
-          return;
-        }
-        await api(`/api/projects/${id}/move`, {
+      async function assignPlaylistToFolder(projectId, folderId) {
+        await api(`/api/projects/${projectId}/move`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ folderId: folder.id }),
+          body: JSON.stringify({ folderId }),
         });
-        openFolderIds.add(folder.id);
-        persistOpenFolders();
+        if (folderId) {
+          openFolderIds.add(folderId);
+          persistOpenFolders();
+        }
         await refreshSidebar();
         setActiveSidebar(viewMode, currentProjectId);
       }
 
       async function removePlaylistFromFolder(id) {
-        await api(`/api/projects/${id}/move`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ folderId: null }),
-        });
-        await refreshSidebar();
-        setActiveSidebar(viewMode, currentProjectId);
+        await assignPlaylistToFolder(id, null);
       }
 
       async function renameFolder(id) {
@@ -1987,6 +2033,67 @@
         await refreshSidebar();
       }
 
+      function bindFolderPlaylistDrop(el, folderId) {
+        const hasPlaylistDrag = (ev) =>
+          [...ev.dataTransfer.types].includes("application/x-song-matcher-playlist");
+        const hasTrackDrag = (ev) =>
+          [...ev.dataTransfer.types].includes("application/x-song-matcher");
+
+        el.addEventListener("dragover", (ev) => {
+          if (hasPlaylistDrag(ev)) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            ev.dataTransfer.dropEffect = "move";
+            el.classList.add("drop-hover");
+            if (folderId) {
+              const wrap = el.closest(".pl-folder");
+              if (wrap && !openFolderIds.has(folderId)) {
+                openFolderIds.add(folderId);
+                persistOpenFolders();
+                wrap.classList.add("open");
+                const chev = wrap.querySelector(".pl-folder-chevron");
+                if (chev) chev.textContent = "▴";
+              }
+            }
+            return;
+          }
+          if (hasTrackDrag(ev) && folderId) {
+            ev.preventDefault();
+            const wrap = el.closest(".pl-folder");
+            if (wrap && !openFolderIds.has(folderId)) {
+              openFolderIds.add(folderId);
+              persistOpenFolders();
+              wrap.classList.add("open");
+              const chev = wrap.querySelector(".pl-folder-chevron");
+              if (chev) chev.textContent = "▴";
+            }
+          }
+        });
+        el.addEventListener("dragleave", () => el.classList.remove("drop-hover"));
+        el.addEventListener("drop", async (ev) => {
+          el.classList.remove("drop-hover");
+          if (!hasPlaylistDrag(ev)) return;
+          ev.preventDefault();
+          ev.stopPropagation();
+          let payload = null;
+          try {
+            payload = JSON.parse(
+              ev.dataTransfer.getData("application/x-song-matcher-playlist") || "{}",
+            );
+          } catch {
+            return;
+          }
+          if (!payload?.projectId) return;
+          const cur = playlistsCache.find((x) => x.id === payload.projectId);
+          if ((cur?.folder_id || null) === (folderId || null)) return;
+          try {
+            await assignPlaylistToFolder(payload.projectId, folderId);
+          } catch (e) {
+            alert(e.message || String(e));
+          }
+        });
+      }
+
       function bindPlaylistRowDrop(row, p) {
         row.addEventListener("dragover", (ev) => {
           if (![...ev.dataTransfer.types].includes("application/x-song-matcher")) return;
@@ -1997,6 +2104,7 @@
         row.addEventListener("dragleave", () => row.classList.remove("drop-hover"));
         row.addEventListener("drop", async (ev) => {
           row.classList.remove("drop-hover");
+          if ([...ev.dataTransfer.types].includes("application/x-song-matcher-playlist")) return;
           ev.preventDefault();
           let payload = null;
           try {
@@ -2034,12 +2142,24 @@
         const row = document.createElement("div");
         row.className = nested ? "pl-item pl-nested" : "pl-item";
         row.dataset.id = p.id;
-        row.title = "Drop tracks to copy · right-click for options";
+        row.draggable = true;
+        row.title = "Drag onto a folder to organize · drop tracks to copy · right-click for options";
         row.innerHTML = `
           <span class="pl-name">${esc(p.name)}</span>
           <span class="pl-count">${esc(p.song_count ?? 0)}</span>`;
         row.addEventListener("click", () => openProject(p.id));
         row.addEventListener("contextmenu", (ev) => showPlaylistCtx(ev, p.id));
+        row.addEventListener("dragstart", (ev) => {
+          row.classList.add("dragging");
+          const payload = JSON.stringify({
+            projectId: p.id,
+            fromFolderId: p.folder_id || null,
+          });
+          ev.dataTransfer.setData("application/x-song-matcher-playlist", payload);
+          ev.dataTransfer.setData("text/plain", p.name);
+          ev.dataTransfer.effectAllowed = "move";
+        });
+        row.addEventListener("dragend", () => row.classList.remove("dragging"));
         bindPlaylistRowDrop(row, p);
         return row;
       }
@@ -2052,7 +2172,7 @@
         const head = document.createElement("button");
         head.type = "button";
         head.className = "pl-folder-head";
-        head.title = "Click to expand · right-click for options · drop tracks onto a playlist inside";
+        head.title = "Drop a playlist here to move it in · click to expand · right-click for options";
         head.innerHTML = `
           <svg class="pl-folder-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
           <span class="pl-folder-meta">
@@ -2069,21 +2189,10 @@
           head.querySelector(".pl-folder-chevron").textContent = openFolderIds.has(f.id) ? "▴" : "▾";
         });
         head.addEventListener("contextmenu", (ev) => showFolderCtx(ev, f.id));
-        // Dropping on folder head moves? Better: expand and copy onto playlists only.
-        // Allow drop onto folder = if exactly one playlist? No - require drop on playlist.
-        // Optionally drop playlist-reorder later. For tracks, highlight folder and open it.
-        head.addEventListener("dragover", (ev) => {
-          if (![...ev.dataTransfer.types].includes("application/x-song-matcher")) return;
-          ev.preventDefault();
-          if (!openFolderIds.has(f.id)) {
-            openFolderIds.add(f.id);
-            persistOpenFolders();
-            wrap.classList.add("open");
-            head.querySelector(".pl-folder-chevron").textContent = "▴";
-          }
-        });
+        bindFolderPlaylistDrop(head, f.id);
         const kids = document.createElement("div");
         kids.className = "pl-folder-children";
+        bindFolderPlaylistDrop(kids, f.id);
         for (const p of children) kids.appendChild(makePlaylistRow(p, true));
         wrap.appendChild(head);
         wrap.appendChild(kids);
@@ -2165,16 +2274,19 @@
         hidePlaylistCtx();
         if (id) await movePlaylist(id, "down");
       };
-      $("ctx-move-to-folder").onclick = async () => {
-        const id = ctxPlaylistId;
-        hidePlaylistCtx();
-        if (id) await movePlaylistToFolder(id);
-      };
       $("ctx-remove-from-folder").onclick = async () => {
         const id = ctxPlaylistId;
         hidePlaylistCtx();
         if (id) await removePlaylistFromFolder(id);
       };
+
+      // Drop onto "My Collection" header → move playlist out of any folder
+      (() => {
+        const head = document.querySelector(".sidebar-head");
+        if (!head) return;
+        bindFolderPlaylistDrop(head, null);
+        head.title = "Drop a playlist here to move it out of a folder";
+      })();
       $("ctx-delete").onclick = async () => {
         const id = ctxPlaylistId;
         hidePlaylistCtx();

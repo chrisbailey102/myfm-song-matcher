@@ -13,7 +13,7 @@ const root = PROJECT_ROOT;
 
 const cookieSecret =
   optionalEnv("COOKIE_SECRET")?.trim() ||
-  optionalEnv("APP_PASSWORD")?.trim() ||
+  optionalEnv("SESSION_JWT_SECRET")?.trim() ||
   optionalEnv("SESSION_SECRET")?.trim() ||
   "change-me";
 
@@ -27,11 +27,15 @@ app.use((req, res, next) => {
     next();
     return;
   }
-  if (req.path === "/api/health" || req.path.startsWith("/api/site-auth")) {
+  if (
+    req.path === "/api/health" ||
+    req.path.startsWith("/api/site-auth") ||
+    req.path === "/api/auth/status"
+  ) {
     next();
     return;
   }
-  requireSiteAuth(req, res, next);
+  void requireSiteAuth(req, res, next);
 });
 
 app.use(express.static(path.join(root, "public")));

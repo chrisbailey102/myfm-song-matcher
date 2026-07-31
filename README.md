@@ -22,16 +22,17 @@ npm install
 npm run dev
 ```
 
-Open **http://127.0.0.1:3847/** → (if `APP_PASSWORD` is set, enter the site password) → **Connect Spotify** → paste a **private or public playlist URL** → **Import & enrich**.
+Open **http://127.0.0.1:3847/** → (if `SESSION_JWT_SECRET` is set, sign in via dashboard first) → **Connect Spotify** → paste a **private or public playlist URL** → **Import & enrich**.
 
-### Shared site auth (On The Sly)
+### Shared team SSO (On The Sly)
 
-Dashboard (`dashboard.onthesly.com`) and Song Matcher share one password gate via a signed `site_auth` cookie on `.onthesly.com`.
+Dashboard (`dashboard.onthesly.com`) hosts **Clerk** per-user login and sets a signed `ots_session` JWT cookie on `.onthesly.com`.
 
-- Set the **same** `APP_PASSWORD` and `COOKIE_SECRET` on both Railway services.
-- Login once on either app unlocks both for 12 hours.
+- Set the **same** `SESSION_JWT_SECRET` on dashboard and Song Matcher (and every other tool).
+- On the dashboard service also set `CLERK_SECRET_KEY` + `VITE_CLERK_PUBLISHABLE_KEY`.
+- Invite users in the Clerk dashboard (invite-only recommended).
 - **Spotify Connect** is separate — still required for playlists/playback on Song Matcher.
-- Locally, omit `APP_PASSWORD` to skip the gate, or set it to test the password screen (host-only cookie; no cross-domain SSO on localhost).
+- Locally, omit `SESSION_JWT_SECRET` to skip the team gate.
 
 ### Spotify Dashboard → Redirect URIs
 
@@ -49,8 +50,8 @@ For Railway, also add your production URL (see Deploy section).
 | `SPOTIFY_REDIRECT_URI` | Must match Dashboard |
 | `APP_BASE_URL` | e.g. `http://127.0.0.1:3847` |
 | `SESSION_SECRET` | 32+ random chars for Spotify login cookies |
-| `APP_PASSWORD` | Optional. Shared site password (same as dashboard). When set, unlocks the app before Spotify Connect |
-| `COOKIE_SECRET` | Optional. Signs the `site_auth` cookie — **must match dashboard** for cross-subdomain SSO |
+| `SESSION_JWT_SECRET` | Shared team SSO secret (same as dashboard). When set, requires Clerk login via dashboard |
+| `COOKIE_SECRET` | Optional. Cookie signing secret for any signed cookies |
 | `DATABASE_URL` | `postgresql://myfm:myfm@localhost:5432/myfm` (with `docker compose up -d db`) |
 | `GETSONGBPM_API_KEY` | BPM/key fallback (often Cloudflare-blocked) |
 | `FREQBLOG_API_KEY` | BPM/key/energy when ReccoBeats misses ([freqblog.com](https://freqblog.com/)) |
@@ -115,11 +116,11 @@ npm run myfm -- all -i ./my-catalog.xlsx
    - `APP_BASE_URL=https://song-matcher.onthesly.com`
    - `SPOTIFY_REDIRECT_URI=https://song-matcher.onthesly.com/auth/spotify/callback`
    - `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SESSION_SECRET`
-   - `APP_PASSWORD` and `COOKIE_SECRET` — **same values as dashboard.onthesly.com** (shared site gate / SSO cookie)
+   - `SESSION_JWT_SECRET` — **same value as dashboard.onthesly.com** (shared team SSO cookie)
    - `FREQBLOG_API_KEY` (and optional Genius / GetSongBPM)
 5. In the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard), add that exact redirect URI (keep local ones for dev).
 6. Add colleagues as **authorized users** while the Spotify app is in Development Mode.
-7. Redeploy **dashboard** after its cookie-domain change so logins set `domain=.onthesly.com`.
+7. On dashboard: configure Clerk + `SESSION_JWT_SECRET`, invite team members.
 8. Deploy Song Matcher — `railway.toml` runs `node dist/server.js` after Docker build.
 
 ## Docker (app + Postgres)
