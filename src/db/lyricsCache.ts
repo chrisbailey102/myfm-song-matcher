@@ -81,6 +81,8 @@ export type LyricSearchHit = {
   source: string;
   snippet: string;
   match_ms: number | null;
+  tempo: number | null;
+  camelot: string;
 };
 
 /** Case-insensitive lyric search across a project's cached lyrics. */
@@ -98,8 +100,13 @@ export async function searchProjectLyrics(
     source: string;
     plain_text: string;
     timed_json: string | null;
+    tempo: number | null;
+    tempo_override: number | null;
+    camelot: string | null;
+    camelot_override: string | null;
   }>(
-    `SELECT l.spotify_id, s.artist, s.title, l.source, l.plain_text, l.timed_json
+    `SELECT l.spotify_id, s.artist, s.title, l.source, l.plain_text, l.timed_json,
+            s.tempo, s.tempo_override, s.camelot, s.camelot_override
      FROM lyrics_cache l
      INNER JOIN songs s ON s.spotify_id_resolved = l.spotify_id
      WHERE s.project_id = $1
@@ -127,6 +134,11 @@ export async function searchProjectLyrics(
         break;
       }
     }
+    const tempoRaw =
+      r.tempo_override != null && Number(r.tempo_override) > 0
+        ? Number(r.tempo_override)
+        : Number(r.tempo) || 0;
+    const camelot = String(r.camelot_override || r.camelot || "").trim();
     return {
       spotify_id: r.spotify_id,
       artist: r.artist,
@@ -134,6 +146,8 @@ export async function searchProjectLyrics(
       source: r.source,
       snippet,
       match_ms,
+      tempo: tempoRaw > 0 ? tempoRaw : null,
+      camelot,
     };
   });
 }

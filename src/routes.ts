@@ -700,8 +700,11 @@ export function registerRoutes(app: Express): void {
         source: string;
         plain_text: string;
         timed_json: string | null;
+        tempo: number | null;
+        camelot: string | null;
       }>(
-        `SELECT l.spotify_id, t.artist, t.title, l.source, l.plain_text, l.timed_json
+        `SELECT l.spotify_id, t.artist, t.title, l.source, l.plain_text, l.timed_json,
+                t.tempo, t.camelot
          FROM lyrics_cache l
          INNER JOIN library_tracks t ON t.spotify_id = l.spotify_id
          WHERE l.plain_text ILIKE '%' || $1 || '%'
@@ -725,6 +728,7 @@ export function registerRoutes(app: Express): void {
             break;
           }
         }
+        const tempo = Number(r.tempo) || 0;
         return {
           spotify_id: r.spotify_id,
           artist: r.artist,
@@ -732,6 +736,8 @@ export function registerRoutes(app: Express): void {
           source: r.source,
           snippet,
           match_ms,
+          tempo: tempo > 0 ? tempo : null,
+          camelot: String(r.camelot || "").trim(),
         };
       });
       res.json({ hits, count: hits.length, q });
