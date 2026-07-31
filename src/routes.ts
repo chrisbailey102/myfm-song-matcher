@@ -144,7 +144,7 @@ export function registerRoutes(app: Express): void {
   app.get("/api/spotify/playlists", requireAuth, async (req, res) => {
     try {
       const token = await ensureUserAccessToken(authed(req));
-      const playlists = await fetchUserPlaylists(token, 40);
+      const playlists = await fetchUserPlaylists(token, 200);
       res.json({ playlists });
     } catch (e) {
       res.status(500).json({ error: e instanceof Error ? e.message : String(e) });

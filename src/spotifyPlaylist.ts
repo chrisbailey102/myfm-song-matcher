@@ -123,17 +123,28 @@ export async function fetchPlaylistTracks(
   playlistId: string,
 ): Promise<CatalogRow[]> {
   const rows: CatalogRow[] = [];
-  // Feb 2026: /tracks removed for Dev Mode → use /items
-  let url: string | null =
-    `https://api.spotify.com/v1/playlists/${playlistId}/items?limit=50&market=US&additional_types=track`;
+  // Don't pass market= — it can drop tracks unavailable in that market (e.g. US
+  // filter on a UK playlist). User token already scopes availability.
+  // Prefer offset pagination; `next` URLs are a fallback if present.
+  const pageSize = 50;
+  let offset = 0;
+  let total = Number.POSITIVE_INFINITY;
+  let pages = 0;
 
-  while (url) {
+  while (offset < total) {
+    const url =
+      `https://api.spotify.com/v1/playlists/${playlistId}/items` +
+      `?limit=${pageSize}&offset=${offset}&additional_types=track`;
     const res = await spotifyUserGet(accessToken, url);
     if (!res.ok) {
       throw new Error(forbiddenPlaylistMessage(res.status, await res.text()));
     }
-    const data = (await res.json()) as PlaylistPaging;
-    for (const item of data.items ?? []) {
+    const data = (await res.json()) as PlaylistPaging & { limit?: number };
+    const page = data.items ?? [];
+    if (typeof data.total === "number" && Number.isFinite(data.total)) {
+      total = data.total;
+    }
+    for (const item of page) {
       const t = playlistItemAsTrack(item);
       if (!t) continue;
       const year = t.album?.release_date?.slice(0, 4);
@@ -145,8 +156,19 @@ export async function fetchPlaylistTracks(
         isrc: t.external_ids?.isrc?.trim() || undefined,
       });
     }
-    url = data.next;
+    pages += 1;
+    offset += pageSize;
+    // Stop if Spotify returned a short page and no authoritative total
+    if (page.length === 0) break;
+    if (!Number.isFinite(total) && page.length < pageSize) break;
+    // Safety: avoid runaway if total is wrong
+    if (pages > 200) break;
   }
+
+  console.info(
+    `Playlist ${playlistId}: fetched ${rows.length} playable tracks` +
+      (Number.isFinite(total) ? ` (Spotify total items=${total})` : ""),
+  );
 
   if (rows.length === 0) {
     throw new Error(
@@ -163,12 +185,15 @@ export type UserPlaylistSummary = {
   track_count: number;
 };
 
+/** Load the user's playlists (paginated). Default max 200 — not a daily quota. */
 export async function fetchUserPlaylists(
   accessToken: string,
-  limit = 30,
+  limit = 200,
 ): Promise<UserPlaylistSummary[]> {
   const out: UserPlaylistSummary[] = [];
-  let url: string | null = `https://api.spotify.com/v1/me/playlists?limit=${Math.min(limit, 50)}`;
+  const pageSize = 50;
+  let url: string | null =
+    `https://api.spotify.com/v1/me/playlists?limit=${pageSize}&offset=0`;
 
   while (url && out.length < limit) {
     const res = await spotifyUserGet(accessToken, url);
@@ -192,7 +217,7 @@ export async function fetchUserPlaylists(
       });
       if (out.length >= limit) break;
     }
-    url = data.next;
+    url = out.length >= limit ? null : data.next;
   }
   return out;
 }

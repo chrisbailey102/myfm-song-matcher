@@ -233,26 +233,51 @@ export async function getTrackById(trackId: string): Promise<SpotifyTrack> {
   );
 }
 
-/** Batch fetch tracks (max 50 ids per Spotify request). Missing ids are omitted. */
+/** Batch fetch tracks. Dev Mode removed GET /tracks?ids= — fall back to per-id. */
 export async function getTracksByIds(
   trackIds: string[],
 ): Promise<Map<string, SpotifyTrack>> {
   const out = new Map<string, SpotifyTrack>();
   const unique = [...new Set(trackIds.map((id) => id.trim()).filter(Boolean))];
+  if (!unique.length) return out;
+
   const chunk = 50;
-  for (let i = 0; i < unique.length; i += chunk) {
-    const slice = unique.slice(i, i + chunk);
-    const params = new URLSearchParams({
-      ids: slice.join(","),
-      market: "US",
-    });
-    const data = await spotifyGet<{ tracks: (SpotifyTrack | null)[] }>(
-      `/tracks?${params.toString()}`,
-    );
-    for (const t of data.tracks ?? []) {
-      if (t?.id) out.set(t.id, t);
+  let batchOk = true;
+  try {
+    for (let i = 0; i < unique.length; i += chunk) {
+      const slice = unique.slice(i, i + chunk);
+      const params = new URLSearchParams({
+        ids: slice.join(","),
+        market: "US",
+      });
+      const data = await spotifyGet<{ tracks: (SpotifyTrack | null)[] }>(
+        `/tracks?${params.toString()}`,
+      );
+      for (const t of data.tracks ?? []) {
+        if (t?.id) out.set(t.id, t);
+      }
+      if (i + chunk < unique.length) await sleep(200);
     }
-    if (i + chunk < unique.length) await sleep(200);
+  } catch (e) {
+    batchOk = false;
+    console.warn(
+      "Batch GET /tracks unavailable (Dev Mode) — fetching tracks individually:",
+      e instanceof Error ? e.message : e,
+    );
+  }
+
+  if (!batchOk || out.size < unique.length) {
+    const missing = unique.filter((id) => !out.has(id));
+    for (let i = 0; i < missing.length; i++) {
+      const id = missing[i];
+      try {
+        const t = await getTrackById(id);
+        if (t?.id) out.set(t.id, t);
+      } catch (e) {
+        console.warn(`Track ${id} fetch failed:`, e instanceof Error ? e.message : e);
+      }
+      if (i + 1 < missing.length) await sleep(120);
+    }
   }
   return out;
 }

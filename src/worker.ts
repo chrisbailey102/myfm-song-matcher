@@ -86,6 +86,12 @@ async function runEnrichJob(jobId: string, projectId: string): Promise<void> {
     console.warn("Could not refresh playlist meta:", e);
   }
   const rows = await fetchPlaylistTracks(token, project.playlist_id);
+  await updateJobProgress(
+    jobId,
+    0,
+    Math.max(rows.length, 1),
+    `Loaded ${rows.length} tracks from Spotify…`,
+  );
 
   await updateProjectStatus(projectId, "enriching");
   const enriched = await enrichCatalog(rows, (i, t, label) => {
