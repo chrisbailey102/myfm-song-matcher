@@ -1030,6 +1030,7 @@
       <button type="button" id="btn-login" hidden>Connect Spotify</button>
       <button type="button" id="btn-reauth" class="secondary" hidden title="Re-authorize Spotify playlist access">Reconnect Spotify</button>
       <button type="button" id="btn-logout" class="secondary" hidden>Log out Spotify</button>
+      <button type="button" id="btn-team-logout" class="secondary" title="Sign out of On The Sly (all tools)">Log out</button>
     </div>
 
     <div id="main-app" hidden>
@@ -1794,6 +1795,16 @@
       $("btn-reauth").onclick = async () => {
         await api("/api/auth/logout", { method: "POST" });
         window.location.href = "/auth/spotify";
+      };
+      $("btn-team-logout").onclick = async () => {
+        try {
+          await fetch("/api/site-auth/logout", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+          });
+        } catch (_) { /* continue */ }
+        window.location.assign("https://dashboard.onthesly.com/?logout=1");
       };
       $("btn-logout").onclick = async () => {
         try { embedController?.pause?.(); } catch (_) { /* ignore */ }
