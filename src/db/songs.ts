@@ -67,10 +67,21 @@ export async function replaceProjectSongs(
   projectId: string,
   songs: EnrichedSong[],
 ): Promise<void> {
+  // Spotify playlists can list the same track more than once; our schema
+  // enforces UNIQUE(project_id, spotify_id_resolved), so keep first occurrence.
+  const seen = new Set<string>();
+  const unique: EnrichedSong[] = [];
+  for (const s of songs) {
+    const id = (s.spotify_id_resolved || "").trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    unique.push(s);
+  }
+
   await exec(`DELETE FROM songs WHERE project_id = $1`, [projectId]);
   const ts = now();
-  for (let i = 0; i < songs.length; i++) {
-    const s = songs[i];
+  for (let i = 0; i < unique.length; i++) {
+    const s = unique[i];
     await exec(
       `INSERT INTO songs (
         id, project_id, position, artist, title, year, spotify_id_locked, spotify_id_resolved,
