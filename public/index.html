@@ -911,12 +911,27 @@
       .lyric-hit .lyric-meta {
         display: inline-flex;
         align-items: center;
+        flex-wrap: wrap;
         gap: 0.35rem;
         margin-left: 0.35rem;
         vertical-align: middle;
       }
       .lyric-hit .lyric-meta .badge {
         font-variant-numeric: tabular-nums;
+      }
+      .lyric-hit .badge.jump-ok {
+        background: #e8f8ee;
+        color: #0d7a3a;
+        border: 1px solid #b7e4c7;
+      }
+      .lyric-hit .badge.jump-missing {
+        background: #f4f4f5;
+        color: #71717a;
+        border: 1px solid #e4e4e7;
+      }
+      .lyric-hit .play.tiny[disabled],
+      .lyric-hit .play.tiny.is-untimed {
+        opacity: 0.85;
       }
       .toolbar-hint { font-size: 0.95rem; color: var(--muted); margin: 0.3rem 0 0.7rem; }
       details.panel summary { cursor: pointer; font-weight: 600; font-size: 1rem; }
@@ -3116,8 +3131,17 @@
             $("btn-clear-lyric-results").onclick = () => { box.innerHTML = ""; };
             return;
           }
+          const timedCount = hits.filter((h) => h.match_ms != null && Number(h.match_ms) >= 0).length;
+          const untimedCount = hits.length - timedCount;
+          const seekHint =
+            untimedCount === 0
+              ? `<p class="hint" style="margin:0.35rem 0 0">▶ jumps to the matched line when Spotify Embed allows seek (Premium works best).</p>`
+              : timedCount === 0
+                ? `<p class="hint" style="margin:0.35rem 0 0">No timed lyrics for these hits — ▶ starts each track from the beginning. Jump-to-line needs LRCLIB timestamps.</p>`
+                : `<p class="hint" style="margin:0.35rem 0 0">${timedCount} with jump time · ${untimedCount} without (those ▶ from the start).</p>`;
           box.innerHTML =
             `<div class="lyric-results-head"><span>${hits.length} match${hits.length === 1 ? "" : "es"} for “${esc(q)}”</span><button type="button" class="secondary" id="btn-clear-lyric-results" style="font-size:0.75rem;padding:0.2rem 0.55rem">Clear</button></div>` +
+            seekHint +
             hits
               .map((h) => {
                 const tempo =
@@ -3125,13 +3149,24 @@
                     ? Math.round(Number(h.tempo))
                     : null;
                 const camelot = String(h.camelot || "").trim();
+                const hasJump = h.match_ms != null && Number(h.match_ms) >= 0;
+                const ms = hasJump ? Number(h.match_ms) : 0;
+                const clock = hasJump
+                  ? `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`
+                  : "";
+                const jumpBadge = hasJump
+                  ? `<span class="badge jump-ok" title="Timed lyric — play seeks to this point">Jump ${esc(clock)}</span>`
+                  : `<span class="badge jump-missing" title="Plain lyrics only — no line timestamp">No jump · from start</span>`;
+                const playTitle = hasJump
+                  ? `Play from ${clock} (lyric line)`
+                  : "Play from start (no lyric timestamp)";
                 return `<div class="lyric-hit">
-                <button type="button" class="play tiny" data-play="${esc(h.spotify_id)}" data-ms="${h.match_ms ?? 0}">▶</button>
+                <button type="button" class="play tiny${hasJump ? "" : " is-untimed"}" data-play="${esc(h.spotify_id)}" data-ms="${ms}" title="${esc(playTitle)}">▶</button>
                 <strong>${esc(h.artist)}</strong> — ${esc(h.title)}
                 <span class="lyric-meta">
                   ${tempo != null ? `<span class="badge" title="Tempo">${esc(tempo)} BPM</span>` : `<span class="badge" title="Tempo">— BPM</span>`}
                   ${camelot ? keyBadge(camelot) : `<span class="badge" title="Key">—</span>`}
-                  ${h.match_ms != null ? `<span class="badge">${Math.floor(h.match_ms / 60000)}:${String(Math.floor((h.match_ms % 60000) / 1000)).padStart(2, "0")}</span>` : ""}
+                  ${jumpBadge}
                 </span>
                 <div class="snip">${highlightSnippet(h.snippet, q)}</div>
               </div>`;
