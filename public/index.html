@@ -1034,6 +1034,153 @@
       .lyric-hit .play.tiny.is-untimed {
         opacity: 0.85;
       }
+      /* Lyric board */
+      #tab-lyric-board .lb-layout {
+        display: grid;
+        grid-template-columns: minmax(280px, 38%) minmax(0, 1fr);
+        gap: 1rem;
+        align-items: start;
+      }
+      @media (max-width: 960px) {
+        #tab-lyric-board .lb-layout { grid-template-columns: 1fr; }
+      }
+      .lb-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem 0.85rem;
+        align-items: center;
+        margin: 0 0 0.85rem;
+        padding: 0.85rem 1rem;
+        background: #f7f8fa;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+      }
+      .lb-controls label {
+        font-size: 0.85rem;
+        color: var(--muted);
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+      }
+      .lb-controls input[type="text"] { min-width: 10rem; }
+      .lb-switch {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--ink);
+      }
+      .lb-suggest-list {
+        max-height: min(62vh, 640px);
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #fff;
+        padding: 0.35rem;
+      }
+      .lb-suggest {
+        border: 1px solid var(--line-soft);
+        border-radius: 12px;
+        padding: 0.85rem 0.9rem;
+        margin: 0.4rem 0;
+        background: #fafbfc;
+        cursor: grab;
+      }
+      .lb-suggest:active { cursor: grabbing; }
+      .lb-suggest .lb-sentence {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 0.35rem 0.25rem;
+        margin: 0.35rem 0 0.55rem;
+        line-height: 1.35;
+      }
+      .lb-chip-text {
+        font-size: 1.35rem;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+        color: var(--ink);
+      }
+      .lb-join {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: #bbb;
+        padding: 0 0.15rem;
+        user-select: none;
+      }
+      .lb-chip-meta {
+        font-size: 0.8rem;
+        color: var(--muted);
+        margin-top: 0.15rem;
+      }
+      .lb-chip {
+        display: inline-flex;
+        flex-direction: column;
+        max-width: 100%;
+        padding: 0.35rem 0.55rem;
+        border-radius: 10px;
+        border-left: 4px solid #888;
+        background: #fff;
+      }
+      .lb-chip.c0 { border-left-color: #e84a9b; background: #fff5fa; }
+      .lb-chip.c1 { border-left-color: #2ec4b6; background: #f0fffd; }
+      .lb-chip.c2 { border-left-color: #7b8cff; background: #f4f6ff; }
+      .lb-chip.c3 { border-left-color: #f5c518; background: #fffceb; }
+      .lb-suggest-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        align-items: center;
+      }
+      .lb-board {
+        min-height: 320px;
+        border: 2px dashed #c9ced6;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #fff 0%, #f7f8fa 100%);
+        padding: 1.25rem;
+      }
+      .lb-board.drag-over {
+        border-color: var(--accent);
+        background: #f3fbf6;
+      }
+      .lb-board-empty {
+        color: var(--muted);
+        font-size: 1.05rem;
+        padding: 2rem 0.5rem;
+        text-align: center;
+      }
+      .lb-board-row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        gap: 0.45rem;
+        margin-bottom: 1rem;
+      }
+      .lb-board .lb-chip-text { font-size: 1.55rem; }
+      .lb-board .lb-chip {
+        position: relative;
+        padding-right: 1.6rem;
+      }
+      .lb-board .lb-chip button.lb-x {
+        position: absolute;
+        top: 0.2rem;
+        right: 0.25rem;
+        margin: 0;
+        padding: 0.1rem 0.35rem;
+        min-width: 0;
+        font-size: 0.75rem;
+        background: transparent;
+        color: #888;
+        box-shadow: none;
+      }
+      .lb-board-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+        align-items: center;
+      }
       .toolbar-hint { font-size: 0.95rem; color: var(--muted); margin: 0.3rem 0 0.7rem; }
       details.panel summary { cursor: pointer; font-weight: 600; font-size: 1rem; }
       .filters {
@@ -1286,6 +1433,7 @@
             <div class="tabs" id="main-tabs">
               <button type="button" class="active" data-tab="tracks" id="tab-btn-tracks">Tracks</button>
               <button type="button" data-tab="pairs" id="tab-btn-pairs">Pair candidates</button>
+              <button type="button" data-tab="lyric-board" id="tab-btn-lyric-board">Lyric board</button>
             </div>
 
             <p class="status" id="play-status" style="margin:0.35rem 0 0.35rem"></p>
@@ -1332,11 +1480,55 @@
                   <label>Year</label>
                   <input type="number" id="flt-year-min" placeholder="from" style="width:5rem" />
                   <input type="number" id="flt-year-max" placeholder="to" style="width:5rem" />
-                  <label><input type="checkbox" id="flt-bridge" /> Require lyric bridge</label>
                   <button type="button" id="btn-load-pairs">Refresh pairs</button>
                 </div>
               </div>
               <div class="mik-wrap" id="pairs-table"></div>
+            </div>
+
+            <div id="tab-lyric-board" hidden>
+              <div class="lb-controls">
+                <label>Songs
+                  <select id="lb-songs-per">
+                    <option value="2" selected>2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                  </select>
+                </label>
+                <label>Batch
+                  <select id="lb-batch">
+                    <option value="10">10</option>
+                    <option value="20" selected>20</option>
+                    <option value="50">50</option>
+                  </select>
+                </label>
+                <label class="lb-switch" title="Prefer Camelot-compatible keys and close tempos">
+                  <input type="checkbox" id="lb-match-keybpm" checked /> Key / BPM match
+                </label>
+                <label>Direction
+                  <input type="text" id="lb-direction" placeholder="optional e.g. romantic, party" />
+                </label>
+                <button type="button" id="lb-btn-generate">Generate bridges</button>
+                <button type="button" id="lb-btn-more" class="secondary" hidden>Generate more</button>
+                <span class="hint" id="lb-gen-status" style="margin:0"></span>
+              </div>
+              <div class="lb-layout">
+                <div>
+                  <h3 style="margin:0 0 0.5rem;font-size:1rem">Suggestions</h3>
+                  <p class="hint" style="margin:0 0 0.55rem">Drag a suggestion onto the board. Dismiss ones you don’t want.</p>
+                  <div id="lb-suggest-list" class="lb-suggest-list"></div>
+                </div>
+                <div>
+                  <div class="lb-board-toolbar">
+                    <h3 style="margin:0;font-size:1rem;margin-right:auto">Board</h3>
+                    <button type="button" id="lb-btn-play" class="play" disabled>▶ Play board</button>
+                    <button type="button" id="lb-btn-save" class="secondary">Save board</button>
+                    <button type="button" id="lb-btn-clear" class="secondary">Clear board</button>
+                  </div>
+                  <div id="lb-board" class="lb-board"></div>
+                  <p class="hint" id="lb-board-status" style="margin:0.55rem 0 0"></p>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -3009,18 +3201,32 @@
         }
       };
 
-      let contentTab = "tracks"; // 'tracks' | 'pairs'
+      let contentTab = "tracks"; // 'tracks' | 'pairs' | 'lyric-board'
       let pairsLoadedFor = null;
+      let lbSuggestions = [];
+      let lbCursor = 0;
+      let lbBoardChips = [];
+      let lbBoardLoadedFor = null;
 
       function setContentTab(tab) {
         contentTab = tab;
         $("tab-btn-tracks").classList.toggle("active", tab === "tracks");
         $("tab-btn-pairs").classList.toggle("active", tab === "pairs");
+        $("tab-btn-lyric-board").classList.toggle("active", tab === "lyric-board");
         $("tab-tracks").hidden = tab !== "tracks";
         $("tab-pairs").hidden = tab !== "pairs";
+        $("tab-lyric-board").hidden = tab !== "lyric-board";
         if (tab === "pairs" && viewMode === "project" && currentProjectId) {
           if (pairsLoadedFor !== currentProjectId || !pairsCache.length) {
             void loadPairs();
+          }
+        }
+        if (tab === "lyric-board" && viewMode === "project" && currentProjectId) {
+          if (lbBoardLoadedFor !== currentProjectId) {
+            void loadLyricBoard();
+          } else {
+            renderLyricBoard();
+            renderLyricSuggestions();
           }
         }
       }
@@ -3029,6 +3235,10 @@
       $("tab-btn-pairs").onclick = () => {
         if (viewMode !== "project") return;
         setContentTab("pairs");
+      };
+      $("tab-btn-lyric-board").onclick = () => {
+        if (viewMode !== "project") return;
+        setContentTab("lyric-board");
       };
 
       async function openLibrary() {
@@ -3045,6 +3255,8 @@
         $("project-detail").hidden = false;
         $("tab-btn-pairs").disabled = true;
         $("tab-btn-pairs").title = "Open a playlist to see pair candidates";
+        $("tab-btn-lyric-board").disabled = true;
+        $("tab-btn-lyric-board").title = "Open a playlist to use the Lyric board";
         setContentTab("tracks");
         $("detail-title").textContent = "Entire Library";
         $("detail-meta").hidden = true;
@@ -3078,11 +3290,21 @@
         $("project-detail").hidden = false;
         $("tab-btn-pairs").disabled = false;
         $("tab-btn-pairs").title = "";
+        $("tab-btn-lyric-board").disabled = false;
+        $("tab-btn-lyric-board").title = "";
         setContentTab("tracks");
         $("lyric-results").innerHTML = "";
         $("lyric-q").value = "";
         $("pairs-table").innerHTML = "";
         pairsCache = [];
+        lbSuggestions = [];
+        lbCursor = 0;
+        lbBoardChips = [];
+        lbBoardLoadedFor = null;
+        const lbList = $("lb-suggest-list");
+        if (lbList) lbList.innerHTML = "";
+        const lbMore = $("lb-btn-more");
+        if (lbMore) lbMore.hidden = true;
         setActiveSidebar("project", id);
         await loadProjectDetail();
         if (pollTimer) clearInterval(pollTimer);
@@ -3502,11 +3724,10 @@
                   <div class="bpm"><span>BPM</span>${esc(bpmB)}</div>
                   <div class="key-cell">${keyBadge(r.camelot_b)}</div>
                 </div>
-                ${renderBridgeHtml(r.bridge_phrases, r.song_a_spotify_id, r.song_b_spotify_id, r.lyric_score, r.notes)}
                 <div class="pair-meta">
                   <span>Δ BPM <strong>${esc(delta)}</strong></span>
                   <span>Harmonic <strong>${Number(r.harmonic_score).toFixed(2)}</strong></span>
-                  <span>Lyric <strong>${Number(r.lyric_score).toFixed(2)}</strong></span>
+                  <span>Lyric overlap <strong>${Number(r.lyric_score).toFixed(2)}</strong></span>
                   ${r.key_relationship ? `<span>${esc(r.key_relationship)}</span>` : ""}
                 </div>
               </article>`;
@@ -3543,7 +3764,6 @@
         if ($("flt-camelot").value.trim()) params.set("camelot", $("flt-camelot").value.trim());
         if ($("flt-year-min").value) params.set("yearMin", $("flt-year-min").value);
         if ($("flt-year-max").value) params.set("yearMax", $("flt-year-max").value);
-        if ($("flt-bridge").checked) params.set("requireBridge", "1");
         $("pairs-table").innerHTML = "<p class='hint' style='padding:1rem'>Loading pairs…</p>";
         const { pairs, mode } = await api(`/api/projects/${currentProjectId}/pairs?${params}`);
         pairsCache = pairs;
@@ -3556,6 +3776,261 @@
       }
 
       $("btn-load-pairs").onclick = () => loadPairs();
+
+      function lbChipHtml(chip, index, { board = false } = {}) {
+        const cls = `lb-chip c${index % 4}`;
+        const ms =
+          chip.startMs != null && Number(chip.startMs) >= 0
+            ? formatClockFromMs(chip.startMs)
+            : "—";
+        const remove = board
+          ? `<button type="button" class="lb-x secondary" data-lb-remove="${esc(chip.id)}" title="Remove">×</button>`
+          : "";
+        return `<span class="${cls}" data-chip-id="${esc(chip.id)}">
+          <span class="lb-chip-text">${esc(chip.text)}</span>
+          <span class="lb-chip-meta">${esc(chip.artist)} — ${esc(chip.title)} · ${esc(ms)}</span>
+          ${remove}
+        </span>`;
+      }
+
+      function lbSentenceHtml(chips, { board = false } = {}) {
+        return chips
+          .map((c, i) => {
+            const join = i > 0 ? `<span class="lb-join" aria-hidden="true">·</span>` : "";
+            return `${join}${lbChipHtml(c, i, { board })}`;
+          })
+          .join("");
+      }
+
+      function renderLyricSuggestions() {
+        const box = $("lb-suggest-list");
+        if (!box) return;
+        if (!lbSuggestions.length) {
+          box.innerHTML = `<p class="hint" style="padding:0.85rem">No suggestions yet — generate bridges from this playlist’s lyrics.</p>`;
+          return;
+        }
+        box.innerHTML = lbSuggestions
+          .map((s, idx) => {
+            return `<div class="lb-suggest" draggable="true" data-lb-hash="${esc(s.hash)}" data-lb-idx="${idx}">
+              <div class="lb-sentence">${lbSentenceHtml(s.chips)}</div>
+              <div class="lb-suggest-actions">
+                <button type="button" class="play tiny" data-lb-play="${idx}">▶</button>
+                <button type="button" class="secondary" data-lb-add="${idx}">Add to board</button>
+                <button type="button" class="secondary" data-lb-dismiss="${esc(s.hash)}">Dismiss</button>
+                ${s.keyBpmMatched ? `<span class="badge jump-ok">Key/BPM</span>` : `<span class="badge jump-missing">Key/BPM off/miss</span>`}
+              </div>
+            </div>`;
+          })
+          .join("");
+
+        box.querySelectorAll(".lb-suggest").forEach((el) => {
+          el.addEventListener("dragstart", (ev) => {
+            const idx = el.getAttribute("data-lb-idx");
+            ev.dataTransfer.setData("application/x-lb-suggest", idx);
+            ev.dataTransfer.effectAllowed = "copy";
+          });
+        });
+        box.querySelectorAll("[data-lb-play]").forEach((btn) => {
+          btn.onclick = () => {
+            const s = lbSuggestions[Number(btn.getAttribute("data-lb-play"))];
+            if (s) void playChipChain(s.chips);
+          };
+        });
+        box.querySelectorAll("[data-lb-add]").forEach((btn) => {
+          btn.onclick = () => {
+            const s = lbSuggestions[Number(btn.getAttribute("data-lb-add"))];
+            if (s) addSuggestionToBoard(s);
+          };
+        });
+        box.querySelectorAll("[data-lb-dismiss]").forEach((btn) => {
+          btn.onclick = () => void dismissSuggestion(btn.getAttribute("data-lb-dismiss"));
+        });
+      }
+
+      function renderLyricBoard() {
+        const board = $("lb-board");
+        if (!board) return;
+        $("lb-btn-play").disabled = !lbBoardChips.length;
+        if (!lbBoardChips.length) {
+          board.innerHTML = `<div class="lb-board-empty">Drop a suggestion here — lyrics stay large and colour-coded by song.</div>`;
+          return;
+        }
+        board.innerHTML = `<div class="lb-board-row">${lbSentenceHtml(lbBoardChips, { board: true })}</div>
+          <p class="hint" style="margin:0.5rem 0 0">Double-click a lyric chip to shorten it (trim only — no new words).</p>`;
+        board.querySelectorAll("[data-lb-remove]").forEach((btn) => {
+          btn.onclick = (ev) => {
+            ev.stopPropagation();
+            const id = btn.getAttribute("data-lb-remove");
+            lbBoardChips = lbBoardChips.filter((c) => c.id !== id);
+            renderLyricBoard();
+          };
+        });
+        board.querySelectorAll(".lb-chip").forEach((el) => {
+          el.ondblclick = () => {
+            const id = el.getAttribute("data-chip-id");
+            const chip = lbBoardChips.find((c) => c.id === id);
+            if (!chip) return;
+            const next = prompt(
+              "Shorten this lyric (must stay inside the existing phrase):",
+              chip.text,
+            );
+            if (next == null) return;
+            const trimmed = String(next).replace(/\s+/g, " ").trim();
+            if (!trimmed) return;
+            const old = chip.text;
+            const off = old.toLowerCase().indexOf(trimmed.toLowerCase());
+            if (off < 0) {
+              alert("You can only remove words from the ends — no rewriting.");
+              return;
+            }
+            chip.sourceIndex = Number(chip.sourceIndex || 0) + off;
+            chip.text = old.slice(off, off + trimmed.length);
+            renderLyricBoard();
+          };
+        });
+      }
+
+      function addSuggestionToBoard(suggestion) {
+        const chips = (suggestion.chips || []).map((c) => ({
+          ...c,
+          id: c.id || cryptoRandomId(),
+        }));
+        lbBoardChips = chips;
+        renderLyricBoard();
+        $("lb-board-status").textContent = "Added to board — Save when you’re happy.";
+      }
+
+      function cryptoRandomId() {
+        if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+        return `chip-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      }
+
+      async function playChipChain(chips) {
+        if (!chips?.length) return;
+        for (let i = 0; i < chips.length; i++) {
+          const c = chips[i];
+          const ms = c.startMs != null && Number(c.startMs) >= 0 ? Number(c.startMs) : 0;
+          setPlayStatus(
+            `Board play ${i + 1}/${chips.length}: “${c.text}” (${c.artist})`,
+          );
+          await playTrack(c.spotifyId, ms);
+          if (i < chips.length - 1) {
+            await new Promise((r) => setTimeout(r, 4800));
+          }
+        }
+      }
+
+      async function loadLyricBoard() {
+        if (!currentProjectId) return;
+        try {
+          const data = await api(`/api/projects/${currentProjectId}/lyric-board`);
+          lbBoardChips = Array.isArray(data.canvas?.chips) ? data.canvas.chips : [];
+          lbBoardLoadedFor = currentProjectId;
+          renderLyricBoard();
+          renderLyricSuggestions();
+          $("lb-board-status").textContent = data.updatedAt
+            ? "Loaded saved board."
+            : "Empty board — generate suggestions and drag one in.";
+        } catch (e) {
+          $("lb-board-status").textContent = "Couldn’t load board: " + e.message;
+        }
+      }
+
+      async function saveLyricBoardUi() {
+        if (!currentProjectId) return;
+        try {
+          await api(`/api/projects/${currentProjectId}/lyric-board`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chips: lbBoardChips }),
+          });
+          $("lb-board-status").textContent = "Board saved.";
+        } catch (e) {
+          $("lb-board-status").textContent = "Save failed: " + e.message;
+        }
+      }
+
+      async function generateLyricBridges(more) {
+        if (!currentProjectId) return;
+        const status = $("lb-gen-status");
+        if (!more) lbCursor = 0;
+        status.textContent = more ? "Generating more…" : "Generating…";
+        try {
+          const body = {
+            songsPerBridge: Number($("lb-songs-per").value) || 2,
+            batchSize: Number($("lb-batch").value) || 20,
+            direction: $("lb-direction").value.trim(),
+            matchKeyBpm: $("lb-match-keybpm").checked,
+            cursor: more ? lbCursor : 0,
+          };
+          const data = await api(`/api/projects/${currentProjectId}/lyric-board/generate`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          if (more) lbSuggestions = lbSuggestions.concat(data.suggestions || []);
+          else lbSuggestions = data.suggestions || [];
+          lbCursor =
+            data.nextCursor != null
+              ? data.nextCursor
+              : lbCursor + (data.suggestions || []).length;
+          $("lb-btn-more").hidden = data.nextCursor == null;
+          renderLyricSuggestions();
+          const n = (data.suggestions || []).length;
+          status.textContent =
+            n === 0
+              ? more
+                ? "No more suggestions in this run — try turning Key/BPM off or changing direction."
+                : "No bridges found — ensure lyrics are fetched, or relax Key/BPM."
+              : `Showing ${lbSuggestions.length} suggestion${lbSuggestions.length === 1 ? "" : "s"}${
+                  data.total ? ` (${data.total} scored this run)` : ""
+                }.`;
+        } catch (e) {
+          status.textContent = "Generate failed: " + e.message;
+        }
+      }
+
+      async function dismissSuggestion(hash) {
+        if (!currentProjectId || !hash) return;
+        lbSuggestions = lbSuggestions.filter((s) => s.hash !== hash);
+        renderLyricSuggestions();
+        try {
+          await api(`/api/projects/${currentProjectId}/lyric-board/dismiss`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ hashes: [hash] }),
+          });
+        } catch (_) { /* keep local dismiss */ }
+      }
+
+      $("lb-btn-generate").onclick = () => void generateLyricBridges(false);
+      $("lb-btn-more").onclick = () => void generateLyricBridges(true);
+      $("lb-btn-save").onclick = () => void saveLyricBoardUi();
+      $("lb-btn-play").onclick = () => void playChipChain(lbBoardChips);
+      $("lb-btn-clear").onclick = () => {
+        if (!lbBoardChips.length) return;
+        if (!confirm("Clear the board? (Save first if you want to keep it.)")) return;
+        lbBoardChips = [];
+        renderLyricBoard();
+        $("lb-board-status").textContent = "Board cleared (not saved until you Save).";
+      };
+
+      (() => {
+        const board = $("lb-board");
+        if (!board) return;
+        board.addEventListener("dragover", (ev) => {
+          ev.preventDefault();
+          board.classList.add("drag-over");
+        });
+        board.addEventListener("dragleave", () => board.classList.remove("drag-over"));
+        board.addEventListener("drop", (ev) => {
+          ev.preventDefault();
+          board.classList.remove("drag-over");
+          const idx = ev.dataTransfer.getData("application/x-lb-suggest");
+          const s = lbSuggestions[Number(idx)];
+          if (s) addSuggestionToBoard(s);
+        });
+      })();
 
       $("btn-lyric-search").onclick = async () => {
         const q = $("lyric-q").value.trim();

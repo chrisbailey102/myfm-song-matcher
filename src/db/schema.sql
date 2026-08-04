@@ -111,6 +111,13 @@ CREATE TABLE IF NOT EXISTS library_tracks (
   created_at BIGINT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS lyric_boards (
+  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  canvas_json TEXT NOT NULL DEFAULT '{"chips":[]}',
+  dismissed_json TEXT NOT NULL DEFAULT '[]',
+  updated_at BIGINT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
 CREATE INDEX IF NOT EXISTS idx_folders_user ON folders(user_id);
 CREATE INDEX IF NOT EXISTS idx_songs_project ON songs(project_id);
