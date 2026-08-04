@@ -1296,7 +1296,7 @@
               <div class="play-bar-actions">
                 <button type="button" id="btn-stop-play" class="secondary">Pause</button>
                 <a id="open-at-spotify" class="hint" href="#" target="_blank" rel="noopener" hidden style="margin:0;font-weight:600;color:var(--accent);text-decoration:none"></a>
-                <span class="hint" id="play-bar-hint" style="margin:0">Premium playback in Song Matcher — lyric ▶ jumps to the matched line. If nothing plays, reconnect Spotify once (needs streaming permission).</span>
+                <span class="hint" id="play-bar-hint" style="margin:0">Premium playback — lyric ▶ jumps to the line. Safari may need two clicks the first time (autoplay rules). Chrome usually works on the first ▶.</span>
               </div>
             </div>
             <audio id="preview-audio" preload="none" hidden></audio>
@@ -1398,6 +1398,9 @@
       let webDeviceId = null;
       let webPlayerPromise = null;
       let webPlayerError = null;
+      let webPlayerReadyPromise = null;
+      /** True if Player was constructed outside a click — Safari often blocks audio then. */
+      let webPlayerCreatedOutsideGesture = false;
       let allowInlineEdit = true;
       let keyFilters = new Set(); // Camelot codes e.g. "8B"; empty = all
       let awaitImportSuccessFor = null; // project id — show one-shot success when enrich finishes
@@ -1717,6 +1720,14 @@
         setPlayStatus("Paused.");
       }
 
+      function isSafariBrowser() {
+        const ua = navigator.userAgent || "";
+        return (
+          /^((?!chrome|android).)*safari/i.test(ua) ||
+          (Boolean(navigator.vendor) && String(navigator.vendor).includes("Apple"))
+        );
+      }
+
       function loadSpotifyWebPlaybackSdk() {
         return new Promise((resolve, reject) => {
           if (window.Spotify?.Player) {
@@ -1739,76 +1750,144 @@
         });
       }
 
-      async function ensureWebPlayer() {
-        if (webDeviceId && webPlayer) return webDeviceId;
-        if (webPlayerPromise) return webPlayerPromise;
-        webPlayerPromise = (async () => {
-          webPlayerError = null;
-          await loadSpotifyWebPlaybackSdk();
-          if (!window.Spotify?.Player) throw new Error("Spotify Player unavailable");
+      /** Tear down player so Safari can recreate it inside a real click. */
+      function destroyWebPlayer() {
+        try { webPlayer?.disconnect?.(); } catch (_) { /* ignore */ }
+        webPlayer = null;
+        webDeviceId = null;
+        webPlayerPromise = null;
+        webPlayerReadyPromise = null;
+        webPlayerCreatedOutsideGesture = false;
+      }
 
-          const player = new window.Spotify.Player({
-            name: "Song Matcher",
-            getOAuthToken: (cb) => {
-              fetch("/api/spotify/token", { credentials: "same-origin" })
-                .then((r) => r.json())
-                .then((j) => {
-                  if (!j.access_token) throw new Error(j.error || "No Spotify token");
-                  cb(j.access_token);
-                })
-                .catch((err) => {
-                  webPlayerError = err instanceof Error ? err.message : String(err);
-                  cb("");
-                });
-            },
-            volume: 0.85,
-          });
+      /**
+       * Construct Spotify.Player. For Safari this MUST run inside the click handler
+       * (before awaits), or the browser blocks audio as autoplay.
+       */
+      function createWebPlayerSync(fromUserGesture) {
+        if (!window.Spotify?.Player) return null;
+        if (webPlayer) {
+          if (fromUserGesture) {
+            try { webPlayer.activateElement?.(); } catch (_) { /* ignore */ }
+          }
+          return webPlayer;
+        }
 
-          const readyId = await new Promise((resolve, reject) => {
-            const t = window.setTimeout(() => {
-              reject(new Error("Spotify Premium player timed out — reconnect Spotify and try again."));
-            }, 15000);
-            player.addListener("ready", ({ device_id }) => {
-              window.clearTimeout(t);
-              resolve(device_id);
-            });
-            player.addListener("not_ready", () => {
-              webDeviceId = null;
-            });
-            player.addListener("initialization_error", ({ message }) => {
-              window.clearTimeout(t);
-              reject(new Error(message || "Spotify player failed to start"));
-            });
-            player.addListener("authentication_error", ({ message }) => {
-              window.clearTimeout(t);
-              reject(new Error(message || "Spotify auth failed — reconnect Spotify"));
-            });
-            player.addListener("account_error", ({ message }) => {
-              window.clearTimeout(t);
-              reject(new Error(message || "Spotify Premium required for in-app full playback"));
-            });
-            player.connect().then((ok) => {
-              if (!ok) {
-                window.clearTimeout(t);
-                reject(new Error("Could not connect Song Matcher Spotify player"));
-              }
-            });
-          });
-
-          webPlayer = player;
-          webDeviceId = readyId;
-          try {
-            player.activateElement?.();
-          } catch (_) { /* ignore */ }
-          return webDeviceId;
-        })().catch((e) => {
-          webPlayerPromise = null;
-          webPlayer = null;
-          webDeviceId = null;
-          webPlayerError = e instanceof Error ? e.message : String(e);
-          throw e;
+        const player = new window.Spotify.Player({
+          name: "Song Matcher",
+          getOAuthToken: (cb) => {
+            fetch("/api/spotify/token", { credentials: "same-origin" })
+              .then((r) => r.json())
+              .then((j) => {
+                if (!j.access_token) throw new Error(j.error || "No Spotify token");
+                cb(j.access_token);
+              })
+              .catch((err) => {
+                webPlayerError = err instanceof Error ? err.message : String(err);
+                cb("");
+              });
+          },
+          volume: 0.85,
         });
-        return webPlayerPromise;
+
+        webPlayerReadyPromise = new Promise((resolve, reject) => {
+          const t = window.setTimeout(() => {
+            reject(new Error("Spotify Premium player timed out — reconnect Spotify and try again."));
+          }, 15000);
+          player.addListener("ready", ({ device_id }) => {
+            window.clearTimeout(t);
+            webDeviceId = device_id;
+            resolve(device_id);
+          });
+          player.addListener("not_ready", () => {
+            webDeviceId = null;
+          });
+          player.addListener("autoplay_failed", () => {
+            setPlayStatus(
+              "Safari blocked audio — click ▶ once more (Safari needs a direct tap to unlock sound).",
+            );
+          });
+          player.addListener("initialization_error", ({ message }) => {
+            window.clearTimeout(t);
+            reject(new Error(message || "Spotify player failed to start"));
+          });
+          player.addListener("authentication_error", ({ message }) => {
+            window.clearTimeout(t);
+            reject(new Error(message || "Spotify auth failed — reconnect Spotify"));
+          });
+          player.addListener("account_error", ({ message }) => {
+            window.clearTimeout(t);
+            reject(new Error(message || "Spotify Premium required for in-app full playback"));
+          });
+          player.connect().then((ok) => {
+            if (!ok) {
+              window.clearTimeout(t);
+              reject(new Error("Could not connect Song Matcher Spotify player"));
+            }
+          });
+        });
+
+        webPlayer = player;
+        webPlayerCreatedOutsideGesture = !fromUserGesture;
+        if (fromUserGesture) {
+          try { player.activateElement?.(); } catch (_) { /* ignore */ }
+        }
+        return player;
+      }
+
+      async function ensureWebPlayer(fromUserGesture = false) {
+        if (
+          fromUserGesture &&
+          isSafariBrowser() &&
+          webPlayer &&
+          webPlayerCreatedOutsideGesture
+        ) {
+          destroyWebPlayer();
+        }
+
+        if (!webPlayer) {
+          const sdkReady = Boolean(window.Spotify?.Player);
+          if (!sdkReady) await loadSpotifyWebPlaybackSdk();
+          // After awaiting SDK load, Safari no longer treats this as a user gesture.
+          const gestureOk = fromUserGesture && (sdkReady || !isSafariBrowser());
+          if (!createWebPlayerSync(gestureOk)) {
+            throw new Error("Spotify Player unavailable");
+          }
+          if (fromUserGesture && isSafariBrowser() && !sdkReady) {
+            const err = new Error("SAFARI_CLICK_AGAIN");
+            throw err;
+          }
+        } else if (fromUserGesture) {
+          try {
+            await webPlayer.activateElement?.();
+          } catch (_) { /* ignore */ }
+        }
+
+        if (webDeviceId) return webDeviceId;
+        if (!webPlayerReadyPromise) {
+          throw new Error("Spotify player is not ready");
+        }
+        return webPlayerReadyPromise;
+      }
+
+      /**
+       * Call at the very start of every ▶ click (sync) so Safari unlocks audio.
+       * Returns false if Safari needs the SDK loaded first — caller should tell user to click again.
+       */
+      function preparePlaybackGesture() {
+        if (isSafariBrowser() && webPlayer && webPlayerCreatedOutsideGesture) {
+          destroyWebPlayer();
+        }
+        if (window.Spotify?.Player) {
+          createWebPlayerSync(true);
+          webPlayerCreatedOutsideGesture = false;
+          return true;
+        }
+        // Kick off SDK load; user may need a second click on Safari.
+        void loadSpotifyWebPlaybackSdk().then(() => {
+          /* ready for next click */
+        });
+        return false;
       }
 
       function loadSpotifyIframeApi() {
@@ -1957,6 +2036,19 @@
           previewAudio.currentTime = 0;
         }
 
+        // Safari: Player must be created inside this click (preparePlaybackGesture runs sync first).
+        const gestureReady = preparePlaybackGesture();
+        if (!gestureReady && isSafariBrowser()) {
+          embedShown = true;
+          $("play-bar").hidden = false;
+          setPlayStatus("Safari: loading audio engine — click ▶ once more to play.");
+          try {
+            await loadSpotifyWebPlaybackSdk();
+            preparePlaybackGesture();
+          } catch (_) { /* ignore */ }
+          return;
+        }
+
         embedShown = true;
         $("play-bar").hidden = false;
         setOpenAtLink(spotifyId, ms);
@@ -1970,14 +2062,16 @@
         } catch (_) { /* ignore */ }
 
         try {
-          try { webPlayer?.activateElement?.(); } catch (_) { /* ignore */ }
-          const deviceId = await ensureWebPlayer();
+          const deviceId = await ensureWebPlayer(true);
           const result = await api("/api/spotify/play", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ spotifyId, positionMs: ms, deviceId }),
           });
           if (result.ok) {
+            // Safari often starts transferred playback paused — resume in this click chain.
+            try { await webPlayer?.activateElement?.(); } catch (_) { /* ignore */ }
+            try { await webPlayer?.resume?.(); } catch (_) { /* ignore */ }
             setPlayingUi(spotifyId, result.mode === "web" ? "web" : "device");
             setPlayStatus(
               ms > 0
@@ -1997,6 +2091,7 @@
             body: JSON.stringify({ spotifyId, positionMs: ms }),
           });
           if (retry.ok) {
+            try { await webPlayer?.resume?.(); } catch (_) { /* ignore */ }
             setPlayingUi(spotifyId, "device");
             setPlayStatus(
               ms > 0
@@ -2009,6 +2104,10 @@
           await playViaEmbedFallback(spotifyId, ms);
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
+          if (msg === "SAFARI_CLICK_AGAIN" || (isSafariBrowser() && /autoplay|interaction|gesture/i.test(msg))) {
+            setPlayStatus("Safari: audio engine ready — click ▶ once more to play.");
+            return;
+          }
           setPlayStatus(`${msg} — trying Embed fallback…`);
           try {
             await playViaEmbedFallback(spotifyId, ms);
@@ -2021,8 +2120,8 @@
 
       $("btn-stop-play").onclick = () => void stopPlayback();
 
-      // Warm Premium Web Playback so lyric jumps are ready.
-      void ensureWebPlayer().catch(() => {});
+      // Preload SDK only — do NOT construct Player here (Safari blocks that as autoplay).
+      void loadSpotifyWebPlaybackSdk().catch(() => {});
 
       function sortBy(rows, key, dir, getter) {
         const g = getter || ((r) => r[key]);
@@ -2099,17 +2198,14 @@
         if (me.loggedIn) {
           await refreshSidebar();
           if (!viewMode || viewMode === "library") await openLibrary();
-          void ensureWebPlayer().catch(() => {});
+          void loadSpotifyWebPlaybackSdk().catch(() => {});
         } else {
           viewMode = null;
           currentProjectId = null;
           try { embedController?.destroy?.(); } catch (_) { /* ignore */ }
-          try { webPlayer?.disconnect?.(); } catch (_) { /* ignore */ }
+          destroyWebPlayer();
           embedController = null;
           embedControllerPromise = null;
-          webPlayer = null;
-          webPlayerPromise = null;
-          webDeviceId = null;
           embedShown = false;
           nowPlayingId = null;
           playMode = null;
@@ -2172,12 +2268,9 @@
         try { embedController?.pause?.(); } catch (_) { /* ignore */ }
         try { embedController?.destroy?.(); } catch (_) { /* ignore */ }
         try { webPlayer?.pause?.(); } catch (_) { /* ignore */ }
-        try { webPlayer?.disconnect?.(); } catch (_) { /* ignore */ }
+        destroyWebPlayer();
         embedController = null;
         embedControllerPromise = null;
-        webPlayer = null;
-        webPlayerPromise = null;
-        webDeviceId = null;
         embedShown = false;
         await api("/api/auth/logout", { method: "POST" });
         await refreshAuth();
