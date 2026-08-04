@@ -420,14 +420,14 @@
         flex-direction: column;
       }
       #tab-tracks,
-      #tab-pairs {
+      #tab-lyric-board {
         flex: 1;
         min-height: 0;
         display: flex;
         flex-direction: column;
       }
       #tab-tracks[hidden],
-      #tab-pairs[hidden] {
+      #tab-lyric-board[hidden] {
         display: none !important;
       }
       #import-panel,
@@ -816,170 +816,6 @@
         border-radius: 12px;
         width: 100%;
       }
-      .pair-list {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
-        padding: 0.75rem;
-      }
-      .pair-card {
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        background: #f7f8fa;
-        overflow: hidden;
-      }
-      .pair-card:nth-child(even) {
-        background: #eef3f9;
-      }
-      .pair-song {
-        display: grid;
-        grid-template-columns: 2.5rem 2.2rem minmax(0, 1fr) 4.5rem 4.5rem;
-        gap: 0.65rem;
-        align-items: center;
-        padding: 0.7rem 0.85rem;
-        background: #fff;
-        border-bottom: 1px solid var(--line-soft);
-      }
-      .pair-song .lane {
-        font-size: 0.7rem;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: var(--muted);
-        text-align: center;
-      }
-      .pair-song .who {
-        min-width: 0;
-      }
-      .pair-song .who .artist {
-        font-weight: 600;
-        color: var(--ink);
-        font-size: 1rem;
-      }
-      .pair-song .who .title {
-        color: var(--muted);
-        font-size: 0.95rem;
-        margin-top: 0.1rem;
-      }
-      .pair-song .bpm {
-        text-align: right;
-        font-variant-numeric: tabular-nums;
-        font-weight: 700;
-        font-size: 1.05rem;
-        color: var(--ink);
-      }
-      .pair-song .bpm span {
-        display: block;
-        font-size: 0.65rem;
-        font-weight: 600;
-        letter-spacing: 0.05em;
-        text-transform: uppercase;
-        color: var(--muted);
-      }
-      .pair-song .key-cell {
-        text-align: center;
-      }
-      .pair-bridge {
-        padding: 0.35rem 0.85rem 0.55rem;
-        border: 0;
-      }
-      .pair-bridge > summary {
-        list-style: none;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 0.45rem;
-        font-size: 0.7rem;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: var(--muted);
-        padding: 0.4rem 0;
-        user-select: none;
-      }
-      .pair-bridge > summary::-webkit-details-marker { display: none; }
-      .pair-bridge > summary::before {
-        content: "▸";
-        font-size: 0.85rem;
-        line-height: 1;
-        color: var(--muted);
-      }
-      .pair-bridge[open] > summary::before { content: "▾"; }
-      .pair-bridge .bridge-count {
-        font-weight: 600;
-        letter-spacing: 0;
-        text-transform: none;
-        color: #888;
-      }
-      .pair-bridge .bridge-bits {
-        display: flex;
-        flex-direction: column;
-        gap: 0.45rem;
-        padding-bottom: 0.25rem;
-      }
-      .bridge-item {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: 0.45rem 0.55rem;
-        padding: 0.55rem 0.7rem;
-        background: #fff;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-      }
-      .bridge-item .phrase {
-        flex: 1 1 8rem;
-        color: var(--ink);
-        font-size: 0.95rem;
-        font-weight: 600;
-      }
-      .bridge-item .bridge-tag {
-        font-size: 0.75rem;
-        font-weight: 600;
-        color: var(--muted);
-        letter-spacing: 0.02em;
-      }
-      .bridge-item.untimed {
-        background: #f3f4f6;
-      }
-      .pair-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.55rem 1rem;
-        padding: 0.45rem 0.85rem 0.7rem;
-        font-size: 0.85rem;
-        color: var(--muted);
-      }
-      .pair-meta strong {
-        color: var(--ink);
-        font-weight: 600;
-      }
-      .pair-sort-bar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.35rem;
-        align-items: center;
-        padding: 0.65rem 0.75rem 0;
-      }
-      .pair-sort-bar span {
-        font-size: 0.8rem;
-        color: var(--muted);
-        margin-right: 0.25rem;
-      }
-      .pair-sort-bar button {
-        background: transparent;
-        color: var(--muted);
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        padding: 0.25rem 0.65rem;
-        font-size: 0.8rem;
-        font-weight: 600;
-      }
-      .pair-sort-bar button.active {
-        background: var(--ink);
-        color: #fff;
-        border-color: var(--ink);
-      }
       #camelot-wheel path.key-seg {
         cursor: pointer;
         stroke: #fff;
@@ -1034,15 +870,30 @@
       .lyric-hit .play.tiny.is-untimed {
         opacity: 0.85;
       }
-      /* Lyric board */
+      /* Lyric board — fill remaining viewport under controls */
       #tab-lyric-board .lb-layout {
         display: grid;
         grid-template-columns: minmax(280px, 38%) minmax(0, 1fr);
         gap: 1rem;
-        align-items: start;
+        align-items: stretch;
+        flex: 1;
+        min-height: 0;
+      }
+      #tab-lyric-board .lb-layout > div {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        height: 100%;
       }
       @media (max-width: 960px) {
-        #tab-lyric-board .lb-layout { grid-template-columns: 1fr; }
+        #tab-lyric-board .lb-layout {
+          grid-template-columns: 1fr;
+          overflow: auto;
+        }
+        #tab-lyric-board .lb-layout > div {
+          height: auto;
+          min-height: min(50vh, 420px);
+        }
       }
       .lb-controls {
         display: flex;
@@ -1054,6 +905,7 @@
         background: #f7f8fa;
         border: 1px solid var(--line);
         border-radius: 12px;
+        flex-shrink: 0;
       }
       .lb-controls label {
         font-size: 0.85rem;
@@ -1072,7 +924,8 @@
         color: var(--ink);
       }
       .lb-suggest-list {
-        max-height: min(62vh, 640px);
+        flex: 1;
+        min-height: 0;
         overflow: auto;
         border: 1px solid var(--line);
         border-radius: 12px;
@@ -1134,7 +987,9 @@
         align-items: center;
       }
       .lb-board {
-        min-height: 320px;
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
         border: 2px dashed #c9ced6;
         border-radius: 14px;
         background: linear-gradient(180deg, #fff 0%, #f7f8fa 100%);
@@ -1155,7 +1010,27 @@
         flex-wrap: wrap;
         align-items: flex-start;
         gap: 0.45rem;
-        margin-bottom: 1rem;
+      }
+      .lb-bridge {
+        border: 1px solid var(--line-soft);
+        border-radius: 12px;
+        background: #fff;
+        padding: 0.85rem 0.9rem;
+        margin-bottom: 0.75rem;
+      }
+      .lb-bridge-head {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.45rem;
+      }
+      .lb-bridge-head .lb-bridge-label {
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+        margin-right: auto;
       }
       .lb-board .lb-chip-text { font-size: 1.55rem; }
       .lb-board .lb-chip {
@@ -1180,18 +1055,13 @@
         gap: 0.5rem;
         margin-bottom: 0.75rem;
         align-items: center;
+        flex-shrink: 0;
+      }
+      #lb-board-status {
+        flex-shrink: 0;
       }
       .toolbar-hint { font-size: 0.95rem; color: var(--muted); margin: 0.3rem 0 0.7rem; }
       details.panel summary { cursor: pointer; font-weight: 600; font-size: 1rem; }
-      .filters {
-        background: #fafbfc;
-        border: 1px solid var(--line);
-        border-radius: 10px;
-        padding: 1rem 1.15rem;
-        margin-top: 0.85rem;
-        flex-shrink: 0;
-      }
-      .filters h2 { margin-top: 0; }
       table.plain {
         width: 100%;
         border-collapse: collapse;
@@ -1432,7 +1302,6 @@
 
             <div class="tabs" id="main-tabs">
               <button type="button" class="active" data-tab="tracks" id="tab-btn-tracks">Tracks</button>
-              <button type="button" data-tab="pairs" id="tab-btn-pairs">Pair candidates</button>
               <button type="button" data-tab="lyric-board" id="tab-btn-lyric-board">Lyric board</button>
             </div>
 
@@ -1457,33 +1326,6 @@
               </div>
               <div id="lyric-results" class="hint"></div>
               <div class="mik-wrap" id="songs-table"></div>
-            </div>
-
-            <div id="tab-pairs" hidden>
-              <div class="filters" id="pair-filters">
-                <div class="row">
-                  <label>Scope</label>
-                  <select id="pair-mode">
-                    <option value="playlist">Playlist only</option>
-                    <option value="expand">Expand to library</option>
-                  </select>
-                  <label>BPM ±</label>
-                  <input type="number" id="flt-bpm" value="10" style="width:4rem" />
-                  <label>Min lyric</label>
-                  <input type="number" id="flt-lyric" value="0" step="0.1" min="0" max="1" style="width:4rem" />
-                  <label>Min harmonic</label>
-                  <input type="number" id="flt-harm" value="0" step="0.1" min="0" max="1" style="width:4rem" />
-                </div>
-                <div class="row">
-                  <label>Camelot</label>
-                  <input type="text" id="flt-camelot" placeholder="8A,8B" style="width:5.5rem" title="Comma-separated Camelot codes" />
-                  <label>Year</label>
-                  <input type="number" id="flt-year-min" placeholder="from" style="width:5rem" />
-                  <input type="number" id="flt-year-max" placeholder="to" style="width:5rem" />
-                  <button type="button" id="btn-load-pairs">Refresh pairs</button>
-                </div>
-              </div>
-              <div class="mik-wrap" id="pairs-table"></div>
             </div>
 
             <div id="tab-lyric-board" hidden>
@@ -1515,7 +1357,7 @@
               <div class="lb-layout">
                 <div>
                   <h3 style="margin:0 0 0.5rem;font-size:1rem">Suggestions</h3>
-                  <p class="hint" style="margin:0 0 0.55rem">Drag a suggestion onto the board. Dismiss ones you don’t want.</p>
+                  <p class="hint" style="margin:0 0 0.55rem">Drag or Add to board — you can stack multiple bridges. Suggestions are remembered when you come back.</p>
                   <div id="lb-suggest-list" class="lb-suggest-list"></div>
                 </div>
                 <div>
@@ -1565,7 +1407,6 @@
       let viewMode = null; // 'library' | 'project'
       let pollTimer = null;
       let songsCache = [];
-      let pairsCache = [];
       let playlistsCache = [];
       let foldersCache = [];
       let libraryCount = 0;
@@ -1579,7 +1420,6 @@
         })(),
       );
       let songSort = { key: "tempo", dir: 1 };
-      let pairSort = { key: "harmonic_score", dir: -1 };
       let previewAudio = null;
       let nowPlayingId = null;
       let playMode = null; // 'web' | 'embed' | 'device' | null
@@ -1762,10 +1602,6 @@
         status.textContent = `Showing ${short} · ${trackCount} track${trackCount === 1 ? "" : "s"}`;
       }
 
-      function syncPairCamelotField() {
-        if ($("flt-camelot")) $("flt-camelot").value = sortedKeyFilters().join(",");
-      }
-
       /** Toggle a Camelot code on the wheel. Pass null/empty to clear all. */
       function setKeyFilter(code) {
         if (!code) {
@@ -1776,7 +1612,6 @@
           else keyFilters.add(c);
         }
         updateCamelotWheelSelection();
-        syncPairCamelotField();
         const n = songsCache.filter(songMatchesKeyFilter).length;
         syncKeyFilterStatus(songsCache.length ? n : null);
         renderSongs();
@@ -1805,7 +1640,6 @@
           songsCache.length ? songsCache.filter(songMatchesKeyFilter).length : null,
         );
         renderSongs();
-        if (pairsCache.length && typeof renderPairs === "function") renderPairs();
       }
 
       function buildCamelotWheel(force = false) {
@@ -2144,12 +1978,6 @@
           throw e;
         });
         return embedControllerPromise;
-      }
-
-      function parseClock(mmss) {
-        const m = /^(\d+):(\d{2})$/.exec(String(mmss).trim());
-        if (!m) return 0;
-        return (Number(m[1]) * 60 + Number(m[2])) * 1000;
       }
 
       function effectiveTempo(s) {
@@ -3134,7 +2962,6 @@
           viewMode = null;
           currentProjectId = null;
           songsCache = [];
-          pairsCache = [];
           await refreshSidebar();
           $("project-detail").hidden = true;
           $("empty-state").hidden = false;
@@ -3201,28 +3028,71 @@
         }
       };
 
-      let contentTab = "tracks"; // 'tracks' | 'pairs' | 'lyric-board'
-      let pairsLoadedFor = null;
+      let contentTab = "tracks"; // 'tracks' | 'lyric-board'
       let lbSuggestions = [];
       let lbCursor = 0;
-      let lbBoardChips = [];
+      /** @type {{ id: string, chips: any[] }[]} */
+      let lbBoardBridges = [];
       let lbBoardLoadedFor = null;
+      let lbPlayToken = 0;
+      let lbPlaying = false;
+
+      function lyricBoardScopeKey() {
+        if (viewMode === "library") return "library";
+        if (viewMode === "project" && currentProjectId) return currentProjectId;
+        return null;
+      }
+
+      function lyricBoardApiBase() {
+        if (viewMode === "library") return "/api/library/lyric-board";
+        if (viewMode === "project" && currentProjectId) {
+          return `/api/projects/${currentProjectId}/lyric-board`;
+        }
+        return null;
+      }
+
+      function resetLyricBoardUi() {
+        lbSuggestions = [];
+        lbCursor = 0;
+        lbBoardBridges = [];
+        lbBoardLoadedFor = null;
+        lbPlayToken++;
+        lbPlaying = false;
+        setLbPlayButtonUi(false);
+        const lbList = $("lb-suggest-list");
+        if (lbList) lbList.innerHTML = "";
+        const lbMore = $("lb-btn-more");
+        if (lbMore) lbMore.hidden = true;
+        const gen = $("lb-gen-status");
+        if (gen) gen.textContent = "";
+        const st = $("lb-board-status");
+        if (st) st.textContent = "";
+      }
+
+      function flatBoardChips() {
+        return lbBoardBridges.flatMap((b) => b.chips || []);
+      }
+
+      function setLbPlayButtonUi(playing) {
+        lbPlaying = playing;
+        const btn = $("lb-btn-play");
+        if (!btn) return;
+        const has = flatBoardChips().length > 0;
+        btn.disabled = !has && !playing;
+        btn.textContent = playing ? "■ Stop" : "▶ Play board";
+        btn.classList.toggle("secondary", playing);
+        btn.classList.toggle("play", !playing);
+      }
 
       function setContentTab(tab) {
         contentTab = tab;
         $("tab-btn-tracks").classList.toggle("active", tab === "tracks");
-        $("tab-btn-pairs").classList.toggle("active", tab === "pairs");
         $("tab-btn-lyric-board").classList.toggle("active", tab === "lyric-board");
         $("tab-tracks").hidden = tab !== "tracks";
-        $("tab-pairs").hidden = tab !== "pairs";
         $("tab-lyric-board").hidden = tab !== "lyric-board";
-        if (tab === "pairs" && viewMode === "project" && currentProjectId) {
-          if (pairsLoadedFor !== currentProjectId || !pairsCache.length) {
-            void loadPairs();
-          }
-        }
-        if (tab === "lyric-board" && viewMode === "project" && currentProjectId) {
-          if (lbBoardLoadedFor !== currentProjectId) {
+        const scope = lyricBoardScopeKey();
+        if (tab === "lyric-board" && scope) {
+          if (lbBoardLoadedFor !== scope) {
             void loadLyricBoard();
           } else {
             renderLyricBoard();
@@ -3232,12 +3102,8 @@
       }
 
       $("tab-btn-tracks").onclick = () => setContentTab("tracks");
-      $("tab-btn-pairs").onclick = () => {
-        if (viewMode !== "project") return;
-        setContentTab("pairs");
-      };
       $("tab-btn-lyric-board").onclick = () => {
-        if (viewMode !== "project") return;
+        if (!lyricBoardScopeKey()) return;
         setContentTab("lyric-board");
       };
 
@@ -3246,17 +3112,15 @@
         currentProjectId = null;
         selectedSongId = null;
         allowInlineEdit = false;
-        pairsLoadedFor = null;
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = null;
         $("empty-state").hidden = true;
         $("import-panel").hidden = true;
         $("settings-panel").hidden = true;
         $("project-detail").hidden = false;
-        $("tab-btn-pairs").disabled = true;
-        $("tab-btn-pairs").title = "Open a playlist to see pair candidates";
-        $("tab-btn-lyric-board").disabled = true;
-        $("tab-btn-lyric-board").title = "Open a playlist to use the Lyric board";
+        $("tab-btn-lyric-board").disabled = false;
+        $("tab-btn-lyric-board").title = "";
+        resetLyricBoardUi();
         setContentTab("tracks");
         $("detail-title").textContent = "Entire Library";
         $("detail-meta").hidden = true;
@@ -3272,7 +3136,6 @@
         $("library-count").textContent = String(count);
         $("detail-count").textContent = count ? `${count} songs` : "";
         songsCache = songs;
-        pairsCache = [];
         renderSongs();
         updateBackfillButton();
         await refreshSidebar();
@@ -3283,28 +3146,16 @@
         currentProjectId = id;
         selectedSongId = null;
         allowInlineEdit = true;
-        pairsLoadedFor = null;
         $("empty-state").hidden = true;
         $("import-panel").hidden = true;
         $("settings-panel").hidden = true;
         $("project-detail").hidden = false;
-        $("tab-btn-pairs").disabled = false;
-        $("tab-btn-pairs").title = "";
         $("tab-btn-lyric-board").disabled = false;
         $("tab-btn-lyric-board").title = "";
         setContentTab("tracks");
         $("lyric-results").innerHTML = "";
         $("lyric-q").value = "";
-        $("pairs-table").innerHTML = "";
-        pairsCache = [];
-        lbSuggestions = [];
-        lbCursor = 0;
-        lbBoardChips = [];
-        lbBoardLoadedFor = null;
-        const lbList = $("lb-suggest-list");
-        if (lbList) lbList.innerHTML = "";
-        const lbMore = $("lb-btn-more");
-        if (lbMore) lbMore.hidden = true;
+        resetLyricBoardUi();
         setActiveSidebar("project", id);
         await loadProjectDetail();
         if (pollTimer) clearInterval(pollTimer);
@@ -3591,213 +3442,27 @@
         inp.onblur = () => finish(true);
       }
 
-      function renderBridgeHtml(bridgeText, idA, idB, lyricScore = 0, notes = "") {
-        const score = Number(lyricScore) || 0;
-        const missingLyrics = /missing_lyrics/i.test(String(notes || ""));
-        const parts = String(bridgeText || "")
-          .split(/\s*\|\s*/)
-          .map((p) => p.trim())
-          .filter(Boolean);
-
-        const timedParts = [];
-        const phraseParts = [];
-        for (const part of parts) {
-          const timed = /^(.+?)\s*\(A@(\d+:\d+)→B@(\d+:\d+)\)$/.exec(part);
-          if (timed) timedParts.push(timed);
-          else phraseParts.push(part);
-        }
-
-        if (!parts.length) {
-          let reason = "No shared lyric phrases found between these songs.";
-          if (missingLyrics) {
-            reason = "Lyrics missing for one or both songs — can’t score a lyric bridge yet.";
-          } else if (score > 0.05) {
-            reason = "Lyric overlap scored, but no clear shared phrases to list.";
-          }
-          return `<details class="pair-bridge">
-            <summary>Lyric bridge <span class="bridge-count">· none</span></summary>
-            <p class="hint" style="margin:0 0 0.35rem">${esc(reason)}</p>
-            ${score > 0 ? `<p class="hint" style="margin:0 0 0.35rem">Lyric score: <strong>${score.toFixed(2)}</strong></p>` : ""}
-          </details>`;
-        }
-
-        const items = [];
-        for (const timed of timedParts) {
-          const phrase = timed[1].trim();
-          const aMs = parseClock(timed[2]);
-          const bMs = parseClock(timed[3]);
-          items.push(`<div class="bridge-item timed">
-            <span class="phrase">“${esc(phrase)}”</span>
-            <button type="button" class="play tiny" data-play="${esc(idA)}" data-ms="${aMs}" title="Play A at ${timed[2]}">A @ ${esc(timed[2])}</button>
-            <span class="bridge-arrow">→</span>
-            <button type="button" class="play tiny" data-play="${esc(idB)}" data-ms="${bMs}" title="Play B at ${timed[3]}">B @ ${esc(timed[3])}</button>
-          </div>`);
-        }
-        for (const phrase of phraseParts) {
-          items.push(`<div class="bridge-item untimed">
-            <span class="phrase">“${esc(phrase)}”</span>
-            <span class="bridge-tag">shared phrase · no timestamps</span>
-          </div>`);
-        }
-
-        const nTimed = timedParts.length;
-        const nPhrase = phraseParts.length;
-        const countLabel = nTimed
-          ? `· ${nTimed} timed${nPhrase ? ` · ${nPhrase} phrase` : ""}`
-          : `· ${nPhrase} shared phrase${nPhrase === 1 ? "" : "s"} (no times)`;
-        const hint = nTimed
-          ? ""
-          : `<p class="hint" style="margin:0 0 0.45rem">Matched in plain lyrics only — no LRCLIB timestamps, so jump-to-line play isn’t available.</p>`;
-
-        return `<details class="pair-bridge">
-          <summary>Lyric bridge <span class="bridge-count">${countLabel}</span></summary>
-          ${hint}
-          <div class="bridge-bits">${items.join("")}</div>
-        </details>`;
-      }
-
-      function renderPairs() {
-        const el = $("pairs-table");
-        if (!pairsCache.length) {
-          el.innerHTML = "<p class='hint' style='padding:1rem'>No pairs loaded.</p>";
-          return;
-        }
-        const getters = {
-          song_a_artist: (r) => r.song_a_artist,
-          song_a_title: (r) => r.song_a_title,
-          song_b_artist: (r) => r.song_b_artist,
-          song_b_title: (r) => r.song_b_title,
-          bpm_a: (r) => Number(r.bpm_a) || 0,
-          bpm_b: (r) => Number(r.bpm_b) || 0,
-          bpm_delta: (r) => Number(r.bpm_delta) || 0,
-          harmonic_score: (r) => Number(r.harmonic_score) || 0,
-          lyric_score: (r) => Number(r.lyric_score) || 0,
-        };
-        const sorted = sortBy(
-          pairsCache,
-          pairSort.key,
-          pairSort.dir,
-          getters[pairSort.key] || ((r) => r[pairSort.key]),
-        );
-        const show = sorted.slice(0, 200);
-        const sortBtns = [
-          ["harmonic_score", "Harmonic"],
-          ["bpm_delta", "BPM Δ"],
-          ["lyric_score", "Lyric"],
-        ]
-          .map(
-            ([key, label]) =>
-              `<button type="button" data-pair-sort="${key}" class="${pairSort.key === key ? "active" : ""}">${label}${
-                pairSort.key === key ? (pairSort.dir < 0 ? " ▾" : " ▴") : ""
-              }</button>`,
-          )
-          .join("");
-
-        el.innerHTML = `
-          <div class="pair-sort-bar">
-            <span>Sort</span>${sortBtns}
-            <span style="margin-left:auto">Showing ${show.length} of ${pairsCache.length}</span>
-          </div>
-          <div class="pair-list">${show
-            .map((r) => {
-              const bpmA = Math.round(Number(r.bpm_a) || 0) || "—";
-              const bpmB = Math.round(Number(r.bpm_b) || 0) || "—";
-              const delta = Math.round(Number(r.bpm_delta) || 0);
-              return `<article class="pair-card">
-                <div class="pair-song">
-                  <div class="lane">A</div>
-                  <div class="play-cell"><button type="button" class="play tiny" data-play="${esc(r.song_a_spotify_id)}" title="Play A">▶</button></div>
-                  <div class="who">
-                    <div class="artist">${esc(r.song_a_artist)}</div>
-                    <div class="title">${esc(r.song_a_title)}</div>
-                  </div>
-                  <div class="bpm"><span>BPM</span>${esc(bpmA)}</div>
-                  <div class="key-cell">${keyBadge(r.camelot_a)}</div>
-                </div>
-                <div class="pair-song">
-                  <div class="lane">B</div>
-                  <div class="play-cell"><button type="button" class="play tiny" data-play="${esc(r.song_b_spotify_id)}" title="Play B">▶</button></div>
-                  <div class="who">
-                    <div class="artist">${esc(r.song_b_artist)}</div>
-                    <div class="title">${esc(r.song_b_title)}</div>
-                  </div>
-                  <div class="bpm"><span>BPM</span>${esc(bpmB)}</div>
-                  <div class="key-cell">${keyBadge(r.camelot_b)}</div>
-                </div>
-                <div class="pair-meta">
-                  <span>Δ BPM <strong>${esc(delta)}</strong></span>
-                  <span>Harmonic <strong>${Number(r.harmonic_score).toFixed(2)}</strong></span>
-                  <span>Lyric overlap <strong>${Number(r.lyric_score).toFixed(2)}</strong></span>
-                  ${r.key_relationship ? `<span>${esc(r.key_relationship)}</span>` : ""}
-                </div>
-              </article>`;
-            })
-            .join("")}</div>`;
-
-        el.querySelectorAll("[data-pair-sort]").forEach((btn) => {
-          btn.onclick = () => {
-            const key = btn.getAttribute("data-pair-sort");
-            if (pairSort.key === key) pairSort.dir *= -1;
-            else {
-              pairSort.key = key;
-              pairSort.dir = key === "lyric_score" || key === "harmonic_score" ? -1 : 1;
-            }
-            renderPairs();
-          };
-        });
-        el.querySelectorAll("[data-play]").forEach((btn) => {
-          btn.onclick = () =>
-            playTrack(btn.getAttribute("data-play"), Number(btn.getAttribute("data-ms") || 0));
-        });
-        if (nowPlayingId) setPlayingUi(nowPlayingId, playMode);
-      }
-
-      async function loadPairs() {
-        if (viewMode !== "project" || !currentProjectId) return;
-        const params = new URLSearchParams({
-          mode: $("pair-mode").value,
-          bpmTolerance: $("flt-bpm").value || "10",
-          minLyricScore: $("flt-lyric").value || "0",
-          minHarmonicScore: $("flt-harm").value || "0",
-          maxResults: "300",
-        });
-        if ($("flt-camelot").value.trim()) params.set("camelot", $("flt-camelot").value.trim());
-        if ($("flt-year-min").value) params.set("yearMin", $("flt-year-min").value);
-        if ($("flt-year-max").value) params.set("yearMax", $("flt-year-max").value);
-        $("pairs-table").innerHTML = "<p class='hint' style='padding:1rem'>Loading pairs…</p>";
-        const { pairs, mode } = await api(`/api/projects/${currentProjectId}/pairs?${params}`);
-        pairsCache = pairs;
-        pairsLoadedFor = currentProjectId;
-        if (!pairs.length) {
-          $("pairs-table").innerHTML = "<p class='hint' style='padding:1rem'>No pairs match these filters (need BPM + Camelot; try widening BPM or lowering min lyric). Mode: " + esc(mode) + "</p>";
-          return;
-        }
-        renderPairs();
-      }
-
-      $("btn-load-pairs").onclick = () => loadPairs();
-
-      function lbChipHtml(chip, index, { board = false } = {}) {
+      function lbChipHtml(chip, index, { board = false, bridgeId = "" } = {}) {
         const cls = `lb-chip c${index % 4}`;
         const ms =
           chip.startMs != null && Number(chip.startMs) >= 0
             ? formatClockFromMs(chip.startMs)
             : "—";
         const remove = board
-          ? `<button type="button" class="lb-x secondary" data-lb-remove="${esc(chip.id)}" title="Remove">×</button>`
+          ? `<button type="button" class="lb-x secondary" data-lb-remove="${esc(chip.id)}" data-bridge-id="${esc(bridgeId)}" title="Remove">×</button>`
           : "";
-        return `<span class="${cls}" data-chip-id="${esc(chip.id)}">
+        return `<span class="${cls}" data-chip-id="${esc(chip.id)}" data-bridge-id="${esc(bridgeId)}">
           <span class="lb-chip-text">${esc(chip.text)}</span>
           <span class="lb-chip-meta">${esc(chip.artist)} — ${esc(chip.title)} · ${esc(ms)}</span>
           ${remove}
         </span>`;
       }
 
-      function lbSentenceHtml(chips, { board = false } = {}) {
+      function lbSentenceHtml(chips, { board = false, bridgeId = "" } = {}) {
         return chips
           .map((c, i) => {
             const join = i > 0 ? `<span class="lb-join" aria-hidden="true">·</span>` : "";
-            return `${join}${lbChipHtml(c, i, { board })}`;
+            return `${join}${lbChipHtml(c, i, { board, bridgeId })}`;
           })
           .join("");
       }
@@ -3850,25 +3515,63 @@
       function renderLyricBoard() {
         const board = $("lb-board");
         if (!board) return;
-        $("lb-btn-play").disabled = !lbBoardChips.length;
-        if (!lbBoardChips.length) {
-          board.innerHTML = `<div class="lb-board-empty">Drop a suggestion here — lyrics stay large and colour-coded by song.</div>`;
+        setLbPlayButtonUi(lbPlaying);
+        if (!lbBoardBridges.length) {
+          board.innerHTML = `<div class="lb-board-empty">Drop suggestions here — add as many bridges as you like. Lyrics stay large and colour-coded by song.</div>`;
           return;
         }
-        board.innerHTML = `<div class="lb-board-row">${lbSentenceHtml(lbBoardChips, { board: true })}</div>
-          <p class="hint" style="margin:0.5rem 0 0">Double-click a lyric chip to shorten it (trim only — no new words).</p>`;
+        board.innerHTML =
+          lbBoardBridges
+            .map((bridge, bi) => {
+              return `<div class="lb-bridge" data-bridge-id="${esc(bridge.id)}">
+                <div class="lb-bridge-head">
+                  <span class="lb-bridge-label">Bridge ${bi + 1}</span>
+                  <button type="button" class="secondary" data-lb-play-bridge="${esc(bridge.id)}">▶</button>
+                  <button type="button" class="secondary" data-lb-remove-bridge="${esc(bridge.id)}">Remove</button>
+                </div>
+                <div class="lb-board-row">${lbSentenceHtml(bridge.chips, { board: true, bridgeId: bridge.id })}</div>
+              </div>`;
+            })
+            .join("") +
+          `<p class="hint" style="margin:0.5rem 0 0">Double-click a lyric chip to shorten it (trim only — no new words).</p>`;
+
+        board.querySelectorAll("[data-lb-remove-bridge]").forEach((btn) => {
+          btn.onclick = (ev) => {
+            ev.stopPropagation();
+            const id = btn.getAttribute("data-lb-remove-bridge");
+            lbBoardBridges = lbBoardBridges.filter((b) => b.id !== id);
+            renderLyricBoard();
+            void persistLyricBoard("Bridge removed.");
+          };
+        });
+        board.querySelectorAll("[data-lb-play-bridge]").forEach((btn) => {
+          btn.onclick = () => {
+            const id = btn.getAttribute("data-lb-play-bridge");
+            const bridge = lbBoardBridges.find((b) => b.id === id);
+            if (bridge) void playChipChain(bridge.chips);
+          };
+        });
         board.querySelectorAll("[data-lb-remove]").forEach((btn) => {
           btn.onclick = (ev) => {
             ev.stopPropagation();
-            const id = btn.getAttribute("data-lb-remove");
-            lbBoardChips = lbBoardChips.filter((c) => c.id !== id);
+            const chipId = btn.getAttribute("data-lb-remove");
+            const bridgeId = btn.getAttribute("data-bridge-id");
+            const bridge = lbBoardBridges.find((b) => b.id === bridgeId);
+            if (!bridge) return;
+            bridge.chips = bridge.chips.filter((c) => c.id !== chipId);
+            if (!bridge.chips.length) {
+              lbBoardBridges = lbBoardBridges.filter((b) => b.id !== bridgeId);
+            }
             renderLyricBoard();
+            void persistLyricBoard("Updated board.");
           };
         });
         board.querySelectorAll(".lb-chip").forEach((el) => {
           el.ondblclick = () => {
             const id = el.getAttribute("data-chip-id");
-            const chip = lbBoardChips.find((c) => c.id === id);
+            const bridgeId = el.getAttribute("data-bridge-id");
+            const bridge = lbBoardBridges.find((b) => b.id === bridgeId);
+            const chip = bridge?.chips.find((c) => c.id === id);
             if (!chip) return;
             const next = prompt(
               "Shorten this lyric (must stay inside the existing phrase):",
@@ -3886,6 +3589,7 @@
             chip.sourceIndex = Number(chip.sourceIndex || 0) + off;
             chip.text = old.slice(off, off + trimmed.length);
             renderLyricBoard();
+            void persistLyricBoard("Chip trimmed.");
           };
         });
       }
@@ -3893,11 +3597,23 @@
       function addSuggestionToBoard(suggestion) {
         const chips = (suggestion.chips || []).map((c) => ({
           ...c,
-          id: c.id || cryptoRandomId(),
+          id: cryptoRandomId(),
         }));
-        lbBoardChips = chips;
+        if (!chips.length) return;
+        const hash = suggestion.hash || "";
+        if (hash && lbBoardBridges.some((b) => b.sourceHash === hash)) {
+          $("lb-board-status").textContent = "That bridge is already on the board.";
+          return;
+        }
+        lbBoardBridges.push({
+          id: cryptoRandomId(),
+          sourceHash: hash,
+          chips,
+        });
         renderLyricBoard();
-        $("lb-board-status").textContent = "Added to board — Save when you’re happy.";
+        void persistLyricBoard(
+          `Added bridge ${lbBoardBridges.length}. Add more anytime.`,
+        );
       }
 
       function cryptoRandomId() {
@@ -3905,53 +3621,139 @@
         return `chip-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       }
 
+      function estimateChipHoldMs(chip) {
+        const n = String(chip?.text || "")
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean).length;
+        // Rough sung-phrase length — pause after the lyric, don’t let the track run on.
+        return Math.min(6500, Math.max(2400, 900 + n * 420));
+      }
+
+      function sleepMs(ms, token) {
+        return new Promise((resolve) => {
+          const start = Date.now();
+          const iv = setInterval(() => {
+            if (token !== lbPlayToken) {
+              clearInterval(iv);
+              resolve(false);
+              return;
+            }
+            if (Date.now() - start >= ms) {
+              clearInterval(iv);
+              resolve(true);
+            }
+          }, 80);
+        });
+      }
+
       async function playChipChain(chips) {
+        if (lbPlaying) {
+          lbPlayToken++;
+          setLbPlayButtonUi(false);
+          await stopPlayback();
+          setPlayStatus("Stopped.");
+          return;
+        }
         if (!chips?.length) return;
-        for (let i = 0; i < chips.length; i++) {
-          const c = chips[i];
-          const ms = c.startMs != null && Number(c.startMs) >= 0 ? Number(c.startMs) : 0;
-          setPlayStatus(
-            `Board play ${i + 1}/${chips.length}: “${c.text}” (${c.artist})`,
-          );
-          await playTrack(c.spotifyId, ms);
-          if (i < chips.length - 1) {
-            await new Promise((r) => setTimeout(r, 4800));
+        const token = ++lbPlayToken;
+        setLbPlayButtonUi(true);
+        try {
+          for (let i = 0; i < chips.length; i++) {
+            if (token !== lbPlayToken) return;
+            const c = chips[i];
+            const ms = c.startMs != null && Number(c.startMs) >= 0 ? Number(c.startMs) : 0;
+            setPlayStatus(
+              `Board play ${i + 1}/${chips.length}: “${c.text}” (${c.artist})`,
+            );
+            await playTrack(c.spotifyId, ms);
+            if (token !== lbPlayToken) return;
+            const held = await sleepMs(estimateChipHoldMs(c), token);
+            if (!held || token !== lbPlayToken) return;
+            await stopPlayback();
+            if (i < chips.length - 1) {
+              const gap = await sleepMs(280, token);
+              if (!gap || token !== lbPlayToken) return;
+            }
+          }
+          setPlayStatus("Board play finished.");
+        } finally {
+          if (token === lbPlayToken) {
+            setLbPlayButtonUi(false);
           }
         }
       }
 
-      async function loadLyricBoard() {
-        if (!currentProjectId) return;
+      async function persistLyricBoard(statusMsg) {
+        const base = lyricBoardApiBase();
+        if (!base) return;
         try {
-          const data = await api(`/api/projects/${currentProjectId}/lyric-board`);
-          lbBoardChips = Array.isArray(data.canvas?.chips) ? data.canvas.chips : [];
-          lbBoardLoadedFor = currentProjectId;
+          await api(base, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              bridges: lbBoardBridges.map((b) => ({
+                id: b.id,
+                chips: b.chips,
+              })),
+              suggestions: lbSuggestions,
+              suggestCursor: lbCursor,
+            }),
+          });
+          if (statusMsg) $("lb-board-status").textContent = statusMsg;
+        } catch (e) {
+          $("lb-board-status").textContent = "Save failed: " + e.message;
+        }
+      }
+
+      async function loadLyricBoard() {
+        const base = lyricBoardApiBase();
+        const scope = lyricBoardScopeKey();
+        if (!base || !scope) return;
+        try {
+          const data = await api(base);
+          const canvas = data.canvas || {};
+          if (Array.isArray(canvas.bridges) && canvas.bridges.length) {
+            lbBoardBridges = canvas.bridges.map((b) => ({
+              id: b.id || cryptoRandomId(),
+              chips: Array.isArray(b.chips) ? b.chips : [],
+            }));
+          } else if (Array.isArray(canvas.chips) && canvas.chips.length) {
+            lbBoardBridges = [{ id: cryptoRandomId(), chips: canvas.chips }];
+          } else {
+            lbBoardBridges = [];
+          }
+          lbSuggestions = Array.isArray(canvas.suggestions) ? canvas.suggestions : [];
+          lbCursor = Number(canvas.suggestCursor) || 0;
+          $("lb-btn-more").hidden = !lbSuggestions.length;
+          lbBoardLoadedFor = scope;
           renderLyricBoard();
           renderLyricSuggestions();
-          $("lb-board-status").textContent = data.updatedAt
-            ? "Loaded saved board."
-            : "Empty board — generate suggestions and drag one in.";
+          const nB = lbBoardBridges.length;
+          const nS = lbSuggestions.length;
+          if (nB || nS) {
+            $("lb-board-status").textContent = `Loaded${nB ? ` ${nB} bridge${nB === 1 ? "" : "s"}` : ""}${
+              nS ? ` · ${nS} saved suggestion${nS === 1 ? "" : "s"}` : ""
+            }.`;
+          } else {
+            $("lb-board-status").textContent =
+              "Empty board — generate suggestions and add one or more bridges.";
+          }
+          if (nS) {
+            $("lb-gen-status").textContent = `${nS} suggestion${nS === 1 ? "" : "s"} remembered.`;
+          }
         } catch (e) {
           $("lb-board-status").textContent = "Couldn’t load board: " + e.message;
         }
       }
 
       async function saveLyricBoardUi() {
-        if (!currentProjectId) return;
-        try {
-          await api(`/api/projects/${currentProjectId}/lyric-board`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ chips: lbBoardChips }),
-          });
-          $("lb-board-status").textContent = "Board saved.";
-        } catch (e) {
-          $("lb-board-status").textContent = "Save failed: " + e.message;
-        }
+        await persistLyricBoard("Board saved.");
       }
 
       async function generateLyricBridges(more) {
-        if (!currentProjectId) return;
+        const base = lyricBoardApiBase();
+        if (!base) return;
         const status = $("lb-gen-status");
         if (!more) lbCursor = 0;
         status.textContent = more ? "Generating more…" : "Generating…";
@@ -3963,7 +3765,7 @@
             matchKeyBpm: $("lb-match-keybpm").checked,
             cursor: more ? lbCursor : 0,
           };
-          const data = await api(`/api/projects/${currentProjectId}/lyric-board/generate`, {
+          const data = await api(`${base}/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(body),
@@ -3977,25 +3779,30 @@
           $("lb-btn-more").hidden = data.nextCursor == null;
           renderLyricSuggestions();
           const n = (data.suggestions || []).length;
+          const libHint =
+            viewMode === "library"
+              ? " Library generate samples up to 120 tracks with lyrics."
+              : "";
           status.textContent =
             n === 0
               ? more
                 ? "No more suggestions in this run — try turning Key/BPM off or changing direction."
-                : "No bridges found — ensure lyrics are fetched, or relax Key/BPM."
+                : `No bridges found — ensure lyrics are fetched, or relax Key/BPM.${libHint}`
               : `Showing ${lbSuggestions.length} suggestion${lbSuggestions.length === 1 ? "" : "s"}${
                   data.total ? ` (${data.total} scored this run)` : ""
-                }.`;
+                } — remembered for next visit.`;
         } catch (e) {
           status.textContent = "Generate failed: " + e.message;
         }
       }
 
       async function dismissSuggestion(hash) {
-        if (!currentProjectId || !hash) return;
+        const base = lyricBoardApiBase();
+        if (!base || !hash) return;
         lbSuggestions = lbSuggestions.filter((s) => s.hash !== hash);
         renderLyricSuggestions();
         try {
-          await api(`/api/projects/${currentProjectId}/lyric-board/dismiss`, {
+          await api(`${base}/dismiss`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ hashes: [hash] }),
@@ -4006,13 +3813,13 @@
       $("lb-btn-generate").onclick = () => void generateLyricBridges(false);
       $("lb-btn-more").onclick = () => void generateLyricBridges(true);
       $("lb-btn-save").onclick = () => void saveLyricBoardUi();
-      $("lb-btn-play").onclick = () => void playChipChain(lbBoardChips);
+      $("lb-btn-play").onclick = () => void playChipChain(flatBoardChips());
       $("lb-btn-clear").onclick = () => {
-        if (!lbBoardChips.length) return;
-        if (!confirm("Clear the board? (Save first if you want to keep it.)")) return;
-        lbBoardChips = [];
+        if (!lbBoardBridges.length) return;
+        if (!confirm("Clear all bridges from the board?")) return;
+        lbBoardBridges = [];
         renderLyricBoard();
-        $("lb-board-status").textContent = "Board cleared (not saved until you Save).";
+        void persistLyricBoard("Board cleared.");
       };
 
       (() => {

@@ -111,9 +111,11 @@ CREATE TABLE IF NOT EXISTS library_tracks (
   created_at BIGINT NOT NULL
 );
 
+-- scope_key = playlist project id, or library:<userId> for Entire Library
+-- canvas_json: { bridges:[{id,chips:[…]}], suggestions:[…], suggestCursor:number }
 CREATE TABLE IF NOT EXISTS lyric_boards (
-  project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
-  canvas_json TEXT NOT NULL DEFAULT '{"chips":[]}',
+  scope_key TEXT PRIMARY KEY,
+  canvas_json TEXT NOT NULL DEFAULT '{"bridges":[],"suggestions":[],"suggestCursor":0}',
   dismissed_json TEXT NOT NULL DEFAULT '[]',
   updated_at BIGINT NOT NULL
 );
