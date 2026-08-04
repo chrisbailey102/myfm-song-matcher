@@ -62,7 +62,101 @@
         margin-right: auto;
         white-space: nowrap;
       }
-      #auth-status { font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      #auth-status { font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 14rem; }
+      .user-menu {
+        position: relative;
+        margin-left: auto;
+        flex-shrink: 0;
+      }
+      .user-menu-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 0;
+        padding: 0.3rem 0.7rem 0.3rem 0.35rem;
+        border: 0;
+        border-radius: 999px;
+        background: #2a2a2a;
+        color: #fff;
+        font: inherit;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: none;
+      }
+      .user-menu-btn:hover { background: #3a3a3a; }
+      .user-menu-btn[aria-expanded="true"] { background: #3a3a3a; }
+      .user-menu-avatar {
+        width: 1.55rem;
+        height: 1.55rem;
+        border-radius: 50%;
+        background: #0a0a0a;
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: lowercase;
+        flex-shrink: 0;
+      }
+      .user-menu-name {
+        max-width: 9rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .user-menu-caret {
+        font-size: 0.55rem;
+        line-height: 1;
+        opacity: 0.85;
+        transform: translateY(-0.05em);
+      }
+      .user-menu-btn[aria-expanded="true"] .user-menu-caret {
+        transform: rotate(180deg) translateY(0.05em);
+      }
+      .user-menu-dropdown {
+        position: absolute;
+        top: calc(100% + 0.4rem);
+        right: 0;
+        min-width: 12.5rem;
+        padding: 0.35rem 0;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+        z-index: 300;
+      }
+      .user-menu-dropdown[hidden] { display: none !important; }
+      .user-menu-dropdown a,
+      .user-menu-dropdown button {
+        display: block;
+        width: 100%;
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0.65rem 1rem;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: #525252;
+        font: inherit;
+        font-size: 0.95rem;
+        font-weight: 500;
+        text-align: left;
+        text-decoration: none;
+        cursor: pointer;
+        box-shadow: none;
+      }
+      .user-menu-dropdown a:hover,
+      .user-menu-dropdown button:hover {
+        background: #f4f4f5;
+        color: #171717;
+      }
+      .user-menu-dropdown hr {
+        border: 0;
+        border-top: 1px solid #e8e8ea;
+        margin: 0.3rem 0;
+      }
       .app-shell {
         display: grid;
         grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
@@ -1041,11 +1135,23 @@
     <div id="spotify-app" hidden>
     <div class="app-top">
       <h1>Song Matcher</h1>
-      <span id="auth-status" class="hint" style="margin:0">Checking login…</span>
-      <button type="button" id="btn-login" hidden>Connect Spotify</button>
-      <button type="button" id="btn-reauth" class="secondary" hidden title="Re-authorize Spotify playlist access">Reconnect Spotify</button>
-      <button type="button" id="btn-logout" class="secondary" hidden>Log out Spotify</button>
-      <button type="button" id="btn-team-logout" class="secondary" title="Sign out of On The Sly (all tools)">Log out</button>
+      <span id="auth-status" class="hint" style="margin:0" hidden></span>
+      <div class="user-menu" id="user-menu">
+        <button type="button" class="user-menu-btn" id="user-menu-btn" aria-haspopup="true" aria-expanded="false" aria-controls="user-menu-dropdown">
+          <span class="user-menu-avatar" id="user-menu-avatar">?</span>
+          <span class="user-menu-name" id="user-menu-name">Account</span>
+          <span class="user-menu-caret" aria-hidden="true">▼</span>
+        </button>
+        <div class="user-menu-dropdown" id="user-menu-dropdown" role="menu" hidden>
+          <a href="https://dashboard.onthesly.com/#/" role="menuitem">Dashboard</a>
+          <hr />
+          <button type="button" id="btn-login" role="menuitem" hidden>Connect Spotify</button>
+          <button type="button" id="btn-reauth" role="menuitem" hidden title="Re-authorize Spotify playlist access">Reconnect Spotify</button>
+          <button type="button" id="btn-logout" role="menuitem" hidden>Log out Spotify</button>
+          <hr id="user-menu-spotify-sep" hidden />
+          <button type="button" id="btn-team-logout" role="menuitem" title="Sign out of On The Sly (all tools)">Log out</button>
+        </div>
+      </div>
     </div>
 
     <div id="main-app" hidden>
@@ -1783,13 +1889,16 @@
 
       async function refreshAuth() {
         const me = await api("/api/auth/me");
-        $("auth-status").textContent = me.loggedIn
-          ? `Logged in as ${me.displayName || me.spotifyId}`
-          : "Not logged in — connect Spotify to import playlists.";
+        const name = (me.displayName || me.spotifyId || "Account").toString().trim() || "Account";
+        const initial = (name.replace(/^[^a-zA-Z0-9]+/, "")[0] || "?").toLowerCase();
+        $("user-menu-name").textContent = me.loggedIn ? name : "Account";
+        $("user-menu-avatar").textContent = me.loggedIn ? initial : "?";
         $("btn-login").hidden = me.loggedIn;
         $("btn-logout").hidden = !me.loggedIn;
         $("btn-reauth").hidden = !me.loggedIn;
+        $("user-menu-spotify-sep").hidden = false;
         $("main-app").hidden = !me.loggedIn;
+        closeUserMenu();
         if (me.loggedIn) {
           await refreshSidebar();
           if (!viewMode || viewMode === "library") await openLibrary();
@@ -1805,6 +1914,43 @@
           playMode = null;
         }
       }
+
+      function closeUserMenu() {
+        const btn = $("user-menu-btn");
+        const menu = $("user-menu-dropdown");
+        if (!btn || !menu) return;
+        btn.setAttribute("aria-expanded", "false");
+        menu.hidden = true;
+      }
+
+      function toggleUserMenu() {
+        const btn = $("user-menu-btn");
+        const menu = $("user-menu-dropdown");
+        const open = btn.getAttribute("aria-expanded") === "true";
+        if (open) {
+          closeUserMenu();
+          return;
+        }
+        btn.setAttribute("aria-expanded", "true");
+        menu.hidden = false;
+      }
+
+      $("user-menu-btn").onclick = (ev) => {
+        ev.stopPropagation();
+        toggleUserMenu();
+      };
+      document.addEventListener("click", (ev) => {
+        const root = $("user-menu");
+        if (!root || root.contains(ev.target)) return;
+        closeUserMenu();
+      });
+      document.addEventListener("keydown", (ev) => {
+        if (ev.key === "Escape") closeUserMenu();
+      });
+      $("user-menu-dropdown").addEventListener("click", (ev) => {
+        const t = ev.target;
+        if (t && (t.tagName === "A" || t.tagName === "BUTTON")) closeUserMenu();
+      });
 
       $("btn-login").onclick = () => { window.location.href = "/auth/spotify"; };
       $("btn-reauth").onclick = async () => {
@@ -3267,7 +3413,11 @@
 
       const params = new URLSearchParams(location.search);
       if (params.get("connected")) history.replaceState({}, "", "/");
-      if (params.get("auth_error")) $("auth-status").textContent = "Auth error: " + params.get("auth_error");
+      if (params.get("auth_error")) {
+        const el = $("auth-status");
+        el.hidden = false;
+        el.textContent = "Auth error: " + params.get("auth_error");
+      }
 
       $("btn-clear-key").onclick = () => setKeyFilter(null);
       document.querySelectorAll(".camelot-key-toggle [data-key-mode]").forEach((btn) => {
@@ -3281,8 +3431,12 @@
         await refreshAuth();
       })().catch((e) => {
         const el = $("auth-status");
-        if (el) el.textContent = "Error: " + e.message;
-        else $("site-gate-error").textContent = e.message || "Failed to load";
+        if (el) {
+          el.hidden = false;
+          el.textContent = "Error: " + e.message;
+        } else {
+          $("site-gate-error").textContent = e.message || "Failed to load";
+        }
       });
     </script>
   </body>
