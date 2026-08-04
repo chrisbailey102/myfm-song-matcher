@@ -1295,7 +1295,8 @@
               </div>
               <div class="play-bar-actions">
                 <button type="button" id="btn-stop-play" class="secondary">Pause</button>
-                <span class="hint" style="margin:0">In-app Spotify player — no need to open the Spotify app. Press ▶ in this player if audio doesn’t start (browsers often block autoplay). Free ≈ preview; Premium ≈ full track + seek.</span>
+                <a id="open-at-spotify" class="hint" href="#" target="_blank" rel="noopener" hidden style="margin:0;font-weight:600;color:var(--accent);text-decoration:none"></a>
+                <span class="hint" id="play-bar-hint" style="margin:0">In-app player — Spotify desktop app not required. Free accounts get a short preview from the start; exact lyric jumps need Premium in the player, or use Open at…</span>
               </div>
             </div>
             <audio id="preview-audio" preload="none" hidden></audio>
@@ -1693,6 +1694,7 @@
         try {
           embedController?.pause?.();
         } catch (_) { /* ignore */ }
+        setOpenAtLink(null, 0);
         setPlayingUi(null, null);
         setPlayStatus("Paused.");
       }
@@ -1745,7 +1747,7 @@
                 const id = String(uri).replace(/^spotify:track:/, "");
                 if (id) {
                   setPlayingUi(id, "embed");
-                  setPlayStatus("Playing in Spotify Embed below.");
+                  setPlayStatus("Playing in the Spotify player above.");
                 }
               });
               controller.addListener("playback_update", (e) => {
@@ -1785,11 +1787,38 @@
         return body;
       }
 
-      /** Play via Spotify Embed (no Web Playback SDK / Premium device transfer). */
+      function formatClockFromMs(ms) {
+        const s = Math.max(0, Math.floor(Number(ms) / 1000) || 0);
+        return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      }
+
+      function setOpenAtLink(spotifyId, positionMs) {
+        const link = $("open-at-spotify");
+        if (!link) return;
+        const startAt = Math.max(0, Math.floor(Number(positionMs) / 1000) || 0);
+        if (!spotifyId || startAt <= 0) {
+          link.hidden = true;
+          link.removeAttribute("href");
+          link.textContent = "";
+          return;
+        }
+        const clock = formatClockFromMs(positionMs);
+        link.hidden = false;
+        link.href = `https://open.spotify.com/track/${encodeURIComponent(spotifyId)}?t=${startAt}`;
+        link.textContent = `Open at ${clock} in Spotify`;
+        link.title = "Exact lyric time — opens Spotify (needed when Free preview can’t seek)";
+      }
+
+      /**
+       * Play via Spotify Embed.
+       * Do NOT pass startAt into loadEntity for Free/preview — Spotify often shows
+       * “Get Spotify” instead of audio when asked to seek mid-track on a preview.
+       * Load from 0 (same as song table), try seek() for Premium, and offer Open at…
+       */
       async function playTrack(spotifyId, positionMs = 0) {
         if (!spotifyId) return;
         const startAt = Math.max(0, Math.floor(Number(positionMs) / 1000) || 0);
-        // Toggle pause only for plain ▶ (no seek). Timed bridge jumps should always load.
+        // Toggle pause only for plain ▶ (no seek). Timed jumps should always load.
         if (nowPlayingId === spotifyId && playMode === "embed" && !(Number(positionMs) > 0)) {
           await stopPlayback();
           return;
@@ -1801,9 +1830,10 @@
 
         embedShown = true;
         $("play-bar").hidden = false;
+        setOpenAtLink(spotifyId, positionMs);
         setPlayStatus(
           startAt
-            ? `Loading track from ${startAt}s… look for the Spotify player above (press ▶ there if needed).`
+            ? `Loading in-app preview… exact lyric is ${formatClockFromMs(positionMs)} (use Open at… if the player can’t jump).`
             : "Loading Spotify player above… press ▶ in the player if audio doesn’t start.",
         );
         try {
@@ -1813,25 +1843,29 @@
         try {
           const uri = `spotify:track:${spotifyId}`;
           const controller = await ensureEmbedController(uri);
+          // Always load from 0 so Free preview still plays (song-table behaviour).
           if (typeof controller.loadEntity === "function") {
-            controller.loadEntity(uri, false, startAt);
+            controller.loadEntity(uri, false, 0);
           } else if (typeof controller.loadUri === "function") {
-            controller.loadUri(uri, false, startAt);
+            controller.loadUri(uri, false, 0);
           }
           try {
-            if (startAt > 0 && typeof controller.seek === "function") {
-              // Seek after the embed has a moment to load the track.
-              window.setTimeout(() => {
-                try { controller.seek(startAt); } catch (_) { /* ignore */ }
-                try { controller.play(); } catch (_) { /* ignore */ }
-              }, 400);
-            }
             controller.play();
-          } catch (_) { /* user can press play in the embed */ }
+          } catch (_) { /* user may need to press play in the embed */ }
+
+          if (startAt > 0) {
+            window.setTimeout(() => {
+              try {
+                if (typeof controller.seek === "function") controller.seek(startAt);
+                controller.play();
+              } catch (_) { /* Free often can't seek — Open at… link covers this */ }
+            }, 600);
+          }
+
           setPlayingUi(spotifyId, "embed");
           setPlayStatus(
             startAt
-              ? `Jump ${Math.floor(startAt / 60)}:${String(startAt % 60).padStart(2, "0")} — press ▶ in the Spotify player above if it didn’t start.`
+              ? `In-app player ready above. If you only hear the intro (Free preview), use “Open at ${formatClockFromMs(positionMs)} in Spotify”.`
               : "Spotify player ready above — press ▶ there if audio didn’t start.",
           );
           try {
@@ -3302,10 +3336,10 @@
           const untimedCount = hits.length - timedCount;
           const seekHint =
             untimedCount === 0
-              ? `<p class="hint" style="margin:0.35rem 0 0">▶ jumps to the matched line when Spotify Embed allows seek (Premium works best).</p>`
+              ? `<p class="hint" style="margin:0.35rem 0 0">▶ plays an in-app preview (from the start on Free). Use <strong>Open at…</strong> for the exact lyric time in Spotify.</p>`
               : timedCount === 0
                 ? `<p class="hint" style="margin:0.35rem 0 0">No timed lyrics for these hits — ▶ starts each track from the beginning. Jump-to-line needs LRCLIB timestamps.</p>`
-                : `<p class="hint" style="margin:0.35rem 0 0">${timedCount} with jump time · ${untimedCount} without (those ▶ from the start).</p>`;
+                : `<p class="hint" style="margin:0.35rem 0 0">${timedCount} with jump time · ${untimedCount} without. ▶ = in-app preview; <strong>Open at…</strong> = exact lyric in Spotify.</p>`;
           box.innerHTML =
             `<div class="lyric-results-head"><span>${hits.length} match${hits.length === 1 ? "" : "es"} for “${esc(q)}”</span><button type="button" class="secondary" id="btn-clear-lyric-results" style="font-size:0.75rem;padding:0.2rem 0.55rem">Clear</button></div>` +
             seekHint +
@@ -3322,10 +3356,13 @@
                   ? `${Math.floor(ms / 60000)}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, "0")}`
                   : "";
                 const jumpBadge = hasJump
-                  ? `<span class="badge jump-ok" title="Timed lyric — play seeks to this point">Jump ${esc(clock)}</span>`
+                  ? `<span class="badge jump-ok" title="Timed lyric">Jump ${esc(clock)}</span>`
                   : `<span class="badge jump-missing" title="Plain lyrics only — no line timestamp">No jump · from start</span>`;
+                const openAt = hasJump
+                  ? `<a class="badge jump-ok" href="https://open.spotify.com/track/${encodeURIComponent(h.spotify_id)}?t=${Math.floor(ms / 1000)}" target="_blank" rel="noopener" title="Open Spotify at this lyric time" style="text-decoration:none">Open at ${esc(clock)}</a>`
+                  : "";
                 const playTitle = hasJump
-                  ? `Play from ${clock} (lyric line)`
+                  ? `Play in-app preview (exact time: Open at ${clock})`
                   : "Play from start (no lyric timestamp)";
                 return `<div class="lyric-hit">
                 <button type="button" class="play tiny${hasJump ? "" : " is-untimed"}" data-play="${esc(h.spotify_id)}" data-ms="${ms}" title="${esc(playTitle)}">▶</button>
@@ -3334,6 +3371,7 @@
                   ${tempo != null ? `<span class="badge" title="Tempo">${esc(tempo)} BPM</span>` : `<span class="badge" title="Tempo">— BPM</span>`}
                   ${camelot ? keyBadge(camelot) : `<span class="badge" title="Key">—</span>`}
                   ${jumpBadge}
+                  ${openAt}
                 </span>
                 <div class="snip">${highlightSnippet(h.snippet, q)}</div>
               </div>`;
