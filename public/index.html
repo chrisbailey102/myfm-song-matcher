@@ -1296,7 +1296,7 @@
               <div class="play-bar-actions">
                 <button type="button" id="btn-stop-play" class="secondary">Pause</button>
                 <a id="open-at-spotify" class="hint" href="#" target="_blank" rel="noopener" hidden style="margin:0;font-weight:600;color:var(--accent);text-decoration:none"></a>
-                <span class="hint" id="play-bar-hint" style="margin:0">In-app player — Spotify desktop app not required. Free accounts get a short preview from the start; exact lyric jumps need Premium in the player, or use Open at…</span>
+                <span class="hint" id="play-bar-hint" style="margin:0">Premium playback in Song Matcher — lyric ▶ jumps to the matched line. If nothing plays, reconnect Spotify once (needs streaming permission).</span>
               </div>
             </div>
             <audio id="preview-audio" preload="none" hidden></audio>
@@ -1305,7 +1305,7 @@
               <div class="track-head">
                 <input type="text" id="lyric-q" placeholder="Search lyrics…" style="width:min(280px,100%)" />
                 <button type="button" id="btn-lyric-search" class="secondary">Search</button>
-                <span class="hint" style="margin:0">Drag tracks onto a playlist to copy · right-click or Delete/Backspace to remove · double-click tempo/key · ▶ opens Spotify Embed below</span>
+                <span class="hint" style="margin:0">Drag tracks onto a playlist to copy · right-click or Delete/Backspace to remove · double-click tempo/key · ▶ plays via Spotify Premium (lyric search jumps to the line)</span>
               </div>
               <div id="lyric-results" class="hint"></div>
               <div class="mik-wrap" id="songs-table"></div>
@@ -1390,10 +1390,14 @@
       let pairSort = { key: "harmonic_score", dir: -1 };
       let previewAudio = null;
       let nowPlayingId = null;
-      let playMode = null; // 'embed' | null
+      let playMode = null; // 'web' | 'embed' | 'device' | null
       let embedController = null;
       let embedControllerPromise = null;
       let embedShown = false;
+      let webPlayer = null;
+      let webDeviceId = null;
+      let webPlayerPromise = null;
+      let webPlayerError = null;
       let allowInlineEdit = true;
       let keyFilters = new Set(); // Camelot codes e.g. "8B"; empty = all
       let awaitImportSuccessFor = null; // project id — show one-shot success when enrich finishes
@@ -1677,12 +1681,14 @@
         } else {
           $("play-bar").hidden = true;
         }
+        const host = $("spotify-embed-host");
+        if (host) host.hidden = playMode === "web" || playMode === "device";
         document.querySelectorAll("button.play[data-play]").forEach((btn) => {
           const id = btn.getAttribute("data-play");
           const on = Boolean(nowPlayingId && id === nowPlayingId);
           btn.classList.toggle("is-playing", on);
           btn.textContent = on ? "■" : "▶";
-          btn.title = on ? "Pause" : "Play in Spotify Embed";
+          btn.title = on ? "Pause" : "Play (Premium — jumps to lyric time when available)";
         });
       }
 
@@ -1694,9 +1700,115 @@
         try {
           embedController?.pause?.();
         } catch (_) { /* ignore */ }
+        try {
+          webPlayer?.pause?.();
+        } catch (_) { /* ignore */ }
+        if (playMode === "web" || playMode === "device") {
+          try {
+            await api("/api/spotify/pause", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: "{}",
+            });
+          } catch (_) { /* ignore */ }
+        }
         setOpenAtLink(null, 0);
         setPlayingUi(null, null);
         setPlayStatus("Paused.");
+      }
+
+      function loadSpotifyWebPlaybackSdk() {
+        return new Promise((resolve, reject) => {
+          if (window.Spotify?.Player) {
+            resolve();
+            return;
+          }
+          const prev = window.onSpotifyWebPlaybackSDKReady;
+          window.onSpotifyWebPlaybackSDKReady = () => {
+            if (typeof prev === "function") prev();
+            resolve();
+          };
+          if (!document.getElementById("spotify-web-playback-sdk")) {
+            const s = document.createElement("script");
+            s.id = "spotify-web-playback-sdk";
+            s.src = "https://sdk.scdn.co/spotify-player.js";
+            s.async = true;
+            s.onerror = () => reject(new Error("Could not load Spotify Web Playback SDK"));
+            document.body.appendChild(s);
+          }
+        });
+      }
+
+      async function ensureWebPlayer() {
+        if (webDeviceId && webPlayer) return webDeviceId;
+        if (webPlayerPromise) return webPlayerPromise;
+        webPlayerPromise = (async () => {
+          webPlayerError = null;
+          await loadSpotifyWebPlaybackSdk();
+          if (!window.Spotify?.Player) throw new Error("Spotify Player unavailable");
+
+          const player = new window.Spotify.Player({
+            name: "Song Matcher",
+            getOAuthToken: (cb) => {
+              fetch("/api/spotify/token", { credentials: "same-origin" })
+                .then((r) => r.json())
+                .then((j) => {
+                  if (!j.access_token) throw new Error(j.error || "No Spotify token");
+                  cb(j.access_token);
+                })
+                .catch((err) => {
+                  webPlayerError = err instanceof Error ? err.message : String(err);
+                  cb("");
+                });
+            },
+            volume: 0.85,
+          });
+
+          const readyId = await new Promise((resolve, reject) => {
+            const t = window.setTimeout(() => {
+              reject(new Error("Spotify Premium player timed out — reconnect Spotify and try again."));
+            }, 15000);
+            player.addListener("ready", ({ device_id }) => {
+              window.clearTimeout(t);
+              resolve(device_id);
+            });
+            player.addListener("not_ready", () => {
+              webDeviceId = null;
+            });
+            player.addListener("initialization_error", ({ message }) => {
+              window.clearTimeout(t);
+              reject(new Error(message || "Spotify player failed to start"));
+            });
+            player.addListener("authentication_error", ({ message }) => {
+              window.clearTimeout(t);
+              reject(new Error(message || "Spotify auth failed — reconnect Spotify"));
+            });
+            player.addListener("account_error", ({ message }) => {
+              window.clearTimeout(t);
+              reject(new Error(message || "Spotify Premium required for in-app full playback"));
+            });
+            player.connect().then((ok) => {
+              if (!ok) {
+                window.clearTimeout(t);
+                reject(new Error("Could not connect Song Matcher Spotify player"));
+              }
+            });
+          });
+
+          webPlayer = player;
+          webDeviceId = readyId;
+          try {
+            player.activateElement?.();
+          } catch (_) { /* ignore */ }
+          return webDeviceId;
+        })().catch((e) => {
+          webPlayerPromise = null;
+          webPlayer = null;
+          webDeviceId = null;
+          webPlayerError = e instanceof Error ? e.message : String(e);
+          throw e;
+        });
+        return webPlayerPromise;
       }
 
       function loadSpotifyIframeApi() {
@@ -1806,20 +1918,37 @@
         link.hidden = false;
         link.href = `https://open.spotify.com/track/${encodeURIComponent(spotifyId)}?t=${startAt}`;
         link.textContent = `Open at ${clock} in Spotify`;
-        link.title = "Exact lyric time — opens Spotify (needed when Free preview can’t seek)";
+        link.title = "Open Spotify at this lyric timestamp";
       }
 
-      /**
-       * Play via Spotify Embed.
-       * Do NOT pass startAt into loadEntity for Free/preview — Spotify often shows
-       * “Get Spotify” instead of audio when asked to seek mid-track on a preview.
-       * Load from 0 (same as song table), try seek() for Premium, and offer Open at…
-       */
+      async function playViaEmbedFallback(spotifyId, positionMs) {
+        const startAt = Math.max(0, Math.floor(Number(positionMs) / 1000) || 0);
+        setOpenAtLink(spotifyId, positionMs);
+        const uri = `spotify:track:${spotifyId}`;
+        const controller = await ensureEmbedController(uri);
+        if (typeof controller.loadEntity === "function") {
+          controller.loadEntity(uri, false, 0);
+        } else if (typeof controller.loadUri === "function") {
+          controller.loadUri(uri, false, 0);
+        }
+        try { controller.play(); } catch (_) { /* ignore */ }
+        setPlayingUi(spotifyId, "embed");
+        setPlayStatus(
+          startAt
+            ? `Embed fallback. For exact ${formatClockFromMs(positionMs)}, reconnect Spotify (Premium) or use Open at…`
+            : "Embed fallback — press ▶ in the player if needed.",
+        );
+      }
+
+      /** Premium Web Playback with position_ms seek (lyric jumps). Embed is fallback only. */
       async function playTrack(spotifyId, positionMs = 0) {
         if (!spotifyId) return;
-        const startAt = Math.max(0, Math.floor(Number(positionMs) / 1000) || 0);
-        // Toggle pause only for plain ▶ (no seek). Timed jumps should always load.
-        if (nowPlayingId === spotifyId && playMode === "embed" && !(Number(positionMs) > 0)) {
+        const ms = Math.max(0, Math.floor(Number(positionMs) || 0));
+        if (
+          nowPlayingId === spotifyId &&
+          (playMode === "web" || playMode === "device" || playMode === "embed") &&
+          !(ms > 0)
+        ) {
           await stopPlayback();
           return;
         }
@@ -1830,57 +1959,70 @@
 
         embedShown = true;
         $("play-bar").hidden = false;
-        setOpenAtLink(spotifyId, positionMs);
+        setOpenAtLink(spotifyId, ms);
         setPlayStatus(
-          startAt
-            ? `Loading in-app preview… exact lyric is ${formatClockFromMs(positionMs)} (use Open at… if the player can’t jump).`
-            : "Loading Spotify player above… press ▶ in the player if audio doesn’t start.",
+          ms > 0
+            ? `Jumping to ${formatClockFromMs(ms)} with Spotify Premium…`
+            : "Starting Spotify Premium playback…",
         );
         try {
           $("play-bar").scrollIntoView({ behavior: "smooth", block: "nearest" });
         } catch (_) { /* ignore */ }
 
         try {
-          const uri = `spotify:track:${spotifyId}`;
-          const controller = await ensureEmbedController(uri);
-          // Always load from 0 so Free preview still plays (song-table behaviour).
-          if (typeof controller.loadEntity === "function") {
-            controller.loadEntity(uri, false, 0);
-          } else if (typeof controller.loadUri === "function") {
-            controller.loadUri(uri, false, 0);
+          try { webPlayer?.activateElement?.(); } catch (_) { /* ignore */ }
+          const deviceId = await ensureWebPlayer();
+          const result = await api("/api/spotify/play", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ spotifyId, positionMs: ms, deviceId }),
+          });
+          if (result.ok) {
+            setPlayingUi(spotifyId, result.mode === "web" ? "web" : "device");
+            setPlayStatus(
+              ms > 0
+                ? `Playing from ${formatClockFromMs(ms)} (Premium).`
+                : "Playing (Premium).",
+            );
+            return;
           }
-          try {
-            controller.play();
-          } catch (_) { /* user may need to press play in the embed */ }
-
-          if (startAt > 0) {
-            window.setTimeout(() => {
-              try {
-                if (typeof controller.seek === "function") controller.seek(startAt);
-                controller.play();
-              } catch (_) { /* Free often can't seek — Open at… link covers this */ }
-            }, 600);
+          if (result.needsReauth) {
+            setPlayStatus("Spotify needs reconnect for Premium playback — account menu → Reconnect Spotify.");
+            await playViaEmbedFallback(spotifyId, ms);
+            return;
           }
-
-          setPlayingUi(spotifyId, "embed");
-          setPlayStatus(
-            startAt
-              ? `In-app player ready above. If you only hear the intro (Free preview), use “Open at ${formatClockFromMs(positionMs)} in Spotify”.`
-              : "Spotify player ready above — press ▶ there if audio didn’t start.",
-          );
-          try {
-            $("play-bar").scrollIntoView({ behavior: "smooth", block: "nearest" });
-          } catch (_) { /* ignore */ }
+          const retry = await api("/api/spotify/play", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ spotifyId, positionMs: ms }),
+          });
+          if (retry.ok) {
+            setPlayingUi(spotifyId, "device");
+            setPlayStatus(
+              ms > 0
+                ? `Playing from ${formatClockFromMs(ms)} on your Spotify device.`
+                : "Playing on your Spotify device.",
+            );
+            return;
+          }
+          setPlayStatus(result.error || retry.error || "Premium play failed — trying Embed…");
+          await playViaEmbedFallback(spotifyId, ms);
         } catch (e) {
-          setPlayingUi(null, null);
-          setPlayStatus("Couldn’t load Spotify player. (" + e.message + ")");
+          const msg = e instanceof Error ? e.message : String(e);
+          setPlayStatus(`${msg} — trying Embed fallback…`);
+          try {
+            await playViaEmbedFallback(spotifyId, ms);
+          } catch (e2) {
+            setPlayingUi(null, null);
+            setPlayStatus("Couldn’t start playback. (" + (e2 instanceof Error ? e2.message : msg) + ")");
+          }
         }
       }
 
       $("btn-stop-play").onclick = () => void stopPlayback();
 
-      // Warm the Embed API after login so the first ▶ is snappier.
-      void loadSpotifyIframeApi().catch(() => {});
+      // Warm Premium Web Playback so lyric jumps are ready.
+      void ensureWebPlayer().catch(() => {});
 
       function sortBy(rows, key, dir, getter) {
         const g = getter || ((r) => r[key]);
@@ -1957,13 +2099,17 @@
         if (me.loggedIn) {
           await refreshSidebar();
           if (!viewMode || viewMode === "library") await openLibrary();
-          void loadSpotifyIframeApi().catch(() => {});
+          void ensureWebPlayer().catch(() => {});
         } else {
           viewMode = null;
           currentProjectId = null;
           try { embedController?.destroy?.(); } catch (_) { /* ignore */ }
+          try { webPlayer?.disconnect?.(); } catch (_) { /* ignore */ }
           embedController = null;
           embedControllerPromise = null;
+          webPlayer = null;
+          webPlayerPromise = null;
+          webDeviceId = null;
           embedShown = false;
           nowPlayingId = null;
           playMode = null;
@@ -2025,8 +2171,13 @@
       $("btn-logout").onclick = async () => {
         try { embedController?.pause?.(); } catch (_) { /* ignore */ }
         try { embedController?.destroy?.(); } catch (_) { /* ignore */ }
+        try { webPlayer?.pause?.(); } catch (_) { /* ignore */ }
+        try { webPlayer?.disconnect?.(); } catch (_) { /* ignore */ }
         embedController = null;
         embedControllerPromise = null;
+        webPlayer = null;
+        webPlayerPromise = null;
+        webDeviceId = null;
         embedShown = false;
         await api("/api/auth/logout", { method: "POST" });
         await refreshAuth();
@@ -3336,10 +3487,10 @@
           const untimedCount = hits.length - timedCount;
           const seekHint =
             untimedCount === 0
-              ? `<p class="hint" style="margin:0.35rem 0 0">▶ plays an in-app preview (from the start on Free). Use <strong>Open at…</strong> for the exact lyric time in Spotify.</p>`
+              ? `<p class="hint" style="margin:0.35rem 0 0">▶ jumps to the lyric line with Spotify Premium. If it fails, reconnect Spotify once, then try again.</p>`
               : timedCount === 0
                 ? `<p class="hint" style="margin:0.35rem 0 0">No timed lyrics for these hits — ▶ starts each track from the beginning. Jump-to-line needs LRCLIB timestamps.</p>`
-                : `<p class="hint" style="margin:0.35rem 0 0">${timedCount} with jump time · ${untimedCount} without. ▶ = in-app preview; <strong>Open at…</strong> = exact lyric in Spotify.</p>`;
+                : `<p class="hint" style="margin:0.35rem 0 0">${timedCount} with jump time · ${untimedCount} without. ▶ = Premium jump when timed.</p>`;
           box.innerHTML =
             `<div class="lyric-results-head"><span>${hits.length} match${hits.length === 1 ? "" : "es"} for “${esc(q)}”</span><button type="button" class="secondary" id="btn-clear-lyric-results" style="font-size:0.75rem;padding:0.2rem 0.55rem">Clear</button></div>` +
             seekHint +
