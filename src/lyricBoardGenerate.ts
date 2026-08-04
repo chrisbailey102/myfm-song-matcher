@@ -32,13 +32,22 @@ export type LyricBridgeSuggestion = {
   sentence: string;
   chips: BridgeChip[];
   score: number;
+  /** True when every enabled constraint passed (legacy + UI). */
   keyBpmMatched: boolean;
+  keyMatched: boolean;
+  bpmMatched: boolean;
+  filters: { key: boolean; bpm: boolean };
 };
 
 export type GenerateLyricBoardOpts = {
   songsPerBridge: 2 | 3 | 4;
   batchSize: 10 | 20 | 50;
   direction?: string;
+  /** Prefer Camelot-compatible keys (default true). */
+  matchKey?: boolean;
+  /** Prefer close tempos (default true). */
+  matchBpm?: boolean;
+  /** @deprecated Use matchKey / matchBpm. If set and new flags omitted, applies to both. */
   matchKeyBpm?: boolean;
   cursor?: number;
 };
@@ -296,16 +305,39 @@ function sentenceQuality(chips: BridgeChip[]): number {
   return q;
 }
 
-function harmonicOk(
+function resolveMatchFlags(opts: GenerateLyricBoardOpts): {
+  matchKey: boolean;
+  matchBpm: boolean;
+} {
+  const legacy = opts.matchKeyBpm;
+  return {
+    matchKey:
+      opts.matchKey !== undefined ? opts.matchKey !== false : legacy !== false,
+    matchBpm:
+      opts.matchBpm !== undefined ? opts.matchBpm !== false : legacy !== false,
+  };
+}
+
+function pairMatch(
   a: SongCtx,
   b: SongCtx,
-  matchKeyBpm: boolean,
+  matchKey: boolean,
+  matchBpm: boolean,
   bpmTol: number,
-): boolean {
-  if (!matchKeyBpm) return true;
-  if (!a.tempo || !b.tempo || !a.camelot || !b.camelot) return false;
-  if (Math.abs(a.tempo - b.tempo) > bpmTol) return false;
-  return isMikCompatible(a.camelot, b.camelot);
+): { ok: boolean; keyMatched: boolean; bpmMatched: boolean } {
+  let keyMatched = true;
+  let bpmMatched = true;
+  if (matchKey) {
+    keyMatched = Boolean(a.camelot && b.camelot && isMikCompatible(a.camelot, b.camelot));
+  }
+  if (matchBpm) {
+    bpmMatched = Boolean(
+      a.tempo &&
+        b.tempo &&
+        Math.abs(a.tempo - b.tempo) <= bpmTol,
+    );
+  }
+  return { ok: keyMatched && bpmMatched, keyMatched, bpmMatched };
 }
 
 function toBridgeChip(song: SongCtx, phrase: PhraseChip): BridgeChip {
@@ -335,7 +367,15 @@ function pairKey(chips: BridgeChip[]): string {
   return chips.map((c) => c.spotifyId).join(">");
 }
 
-type Cand = { chips: BridgeChip[]; score: number; keyBpmMatched: boolean; quality: number };
+type Cand = {
+  chips: BridgeChip[];
+  score: number;
+  keyBpmMatched: boolean;
+  keyMatched: boolean;
+  bpmMatched: boolean;
+  filters: { key: boolean; bpm: boolean };
+  quality: number;
+};
 
 /** Keep the fullest good sentence when B is a prefix of a longer sibling join. */
 function collapseNestedDuplicates(candidates: Cand[]): Cand[] {
@@ -441,7 +481,7 @@ export async function generateLyricBoardBridgesForScope(
 ): Promise<{ suggestions: LyricBridgeSuggestion[]; nextCursor: number | null; total: number }> {
   const songsPerBridge = opts.songsPerBridge;
   const batchSize = opts.batchSize;
-  const matchKeyBpm = opts.matchKeyBpm !== false;
+  const { matchKey, matchBpm } = resolveMatchFlags(opts);
   const cursor = Math.max(0, Math.floor(opts.cursor || 0));
   const bpmTol = 12;
   const directionTerms = String(opts.direction || "")
@@ -493,7 +533,7 @@ export async function generateLyricBoardBridgesForScope(
   const pushCand = (
     parts: Array<{ song: SongCtx; phrase: PhraseChip }>,
     score: number,
-    keyOk: boolean,
+    match: { ok: boolean; keyMatched: boolean; bpmMatched: boolean },
   ) => {
     if (parts.length !== songsPerBridge) return;
     const idsUsed = new Set(parts.map((p) => p.song.spotifyId));
@@ -504,7 +544,15 @@ export async function generateLyricBoardBridgesForScope(
     const hash = bridgeHash(chips);
     if (seen.has(hash) || dismissedSet.has(hash)) return;
     seen.add(hash);
-    candidates.push({ chips, score: score + quality * 0.15, keyBpmMatched: keyOk, quality });
+    candidates.push({
+      chips,
+      score: score + quality * 0.15,
+      keyBpmMatched: match.ok,
+      keyMatched: match.keyMatched,
+      bpmMatched: match.bpmMatched,
+      filters: { key: matchKey, bpm: matchBpm },
+      quality,
+    });
   };
 
   // 2-song bridges
@@ -514,8 +562,8 @@ export async function generateLyricBoardBridgesForScope(
         if (i === j) continue;
         const A = contexts[i];
         const B = contexts[j];
-        const keyOk = harmonicOk(A, B, matchKeyBpm, bpmTol);
-        if (matchKeyBpm && !keyOk) continue;
+        const match = pairMatch(A, B, matchKey, matchBpm, bpmTol);
+        if ((matchKey || matchBpm) && !match.ok) continue;
         const suf = A.suffixes.slice(0, 20);
         const pre = B.prefixes.slice(0, 20);
         for (const a of suf) {
@@ -527,8 +575,8 @@ export async function generateLyricBoardBridgesForScope(
                 { song: A, phrase: a },
                 { song: B, phrase: b },
               ],
-              sc + (keyOk ? 0.5 : 0),
-              keyOk,
+              sc + (match.ok ? 0.5 : 0),
+              match,
             );
           }
         }
@@ -542,19 +590,19 @@ export async function generateLyricBoardBridgesForScope(
       ap: PhraseChip;
       bp: PhraseChip;
       score: number;
-      keyOk: boolean;
+      match: { ok: boolean; keyMatched: boolean; bpmMatched: boolean };
     };
     const edges: Edge[] = [];
     for (let i = 0; i < contexts.length; i++) {
       for (let j = 0; j < contexts.length; j++) {
         if (i === j) continue;
-        const keyOk = harmonicOk(contexts[i], contexts[j], matchKeyBpm, bpmTol);
-        if (matchKeyBpm && !keyOk) continue;
+        const match = pairMatch(contexts[i], contexts[j], matchKey, matchBpm, bpmTol);
+        if ((matchKey || matchBpm) && !match.ok) continue;
         for (const a of contexts[i].suffixes.slice(0, 14)) {
           for (const b of contexts[j].prefixes.slice(0, 14)) {
             const sc = joinScore(a, b, directionTerms);
             if (sc < 4.5) continue;
-            edges.push({ a: i, b: j, ap: a, bp: b, score: sc, keyOk });
+            edges.push({ a: i, b: j, ap: a, bp: b, score: sc, match });
           }
         }
       }
@@ -571,6 +619,11 @@ export async function generateLyricBoardBridgesForScope(
           // Middle + final must both be closed continuations
           if (!isClosedContinuation(mid.text) || !isClosedContinuation(e2.bp.text)) continue;
           const sc = e1.score + e2.score;
+          const match = {
+            ok: e1.match.ok && e2.match.ok,
+            keyMatched: e1.match.keyMatched && e2.match.keyMatched,
+            bpmMatched: e1.match.bpmMatched && e2.match.bpmMatched,
+          };
           pushCand(
             [
               { song: contexts[e1.a], phrase: e1.ap },
@@ -578,7 +631,7 @@ export async function generateLyricBoardBridgesForScope(
               { song: contexts[e2.b], phrase: e2.bp },
             ],
             sc / 2,
-            e1.keyOk && e2.keyOk,
+            match,
           );
         }
       } else {
@@ -597,6 +650,13 @@ export async function generateLyricBoardBridgesForScope(
               continue;
             }
             const sc = e1.score + e2.score + e3.score;
+            const match = {
+              ok: e1.match.ok && e2.match.ok && e3.match.ok,
+              keyMatched:
+                e1.match.keyMatched && e2.match.keyMatched && e3.match.keyMatched,
+              bpmMatched:
+                e1.match.bpmMatched && e2.match.bpmMatched && e3.match.bpmMatched,
+            };
             pushCand(
               [
                 { song: contexts[e1.a], phrase: e1.ap },
@@ -605,7 +665,7 @@ export async function generateLyricBoardBridgesForScope(
                 { song: contexts[e3.b], phrase: e3.bp },
               ],
               sc / 3,
-              e1.keyOk && e2.keyOk && e3.keyOk,
+              match,
             );
           }
         }
@@ -622,6 +682,9 @@ export async function generateLyricBoardBridgesForScope(
     chips: c.chips,
     score: c.score,
     keyBpmMatched: c.keyBpmMatched,
+    keyMatched: c.keyMatched,
+    bpmMatched: c.bpmMatched,
+    filters: c.filters,
   }));
   const next = cursor + batchSize;
   return {
