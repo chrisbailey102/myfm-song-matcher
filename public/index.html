@@ -710,6 +710,13 @@
         align-items: stretch;
         gap: 0.45rem;
         margin: 0 0 0.65rem;
+        padding: 0.65rem 0.75rem;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #f7f8fa;
+        position: sticky;
+        top: 0.35rem;
+        z-index: 40;
       }
       .play-bar[hidden] { display: none !important; }
       .play-bar-actions {
@@ -1288,7 +1295,7 @@
               </div>
               <div class="play-bar-actions">
                 <button type="button" id="btn-stop-play" class="secondary">Pause</button>
-                <span class="hint" style="margin:0">Log in inside the player if Spotify asks — Free gets previews, Premium gets full tracks.</span>
+                <span class="hint" style="margin:0">In-app Spotify player — no need to open the Spotify app. Press ▶ in this player if audio doesn’t start (browsers often block autoplay). Free ≈ preview; Premium ≈ full track + seek.</span>
               </div>
             </div>
             <audio id="preview-audio" preload="none" hidden></audio>
@@ -1794,7 +1801,14 @@
 
         embedShown = true;
         $("play-bar").hidden = false;
-        setPlayStatus(startAt ? `Loading track from ${startAt}s…` : "Loading Spotify Embed…");
+        setPlayStatus(
+          startAt
+            ? `Loading track from ${startAt}s… look for the Spotify player above (press ▶ there if needed).`
+            : "Loading Spotify player above… press ▶ in the player if audio doesn’t start.",
+        );
+        try {
+          $("play-bar").scrollIntoView({ behavior: "smooth", block: "nearest" });
+        } catch (_) { /* ignore */ }
 
         try {
           const uri = `spotify:track:${spotifyId}`;
@@ -1806,19 +1820,26 @@
           }
           try {
             if (startAt > 0 && typeof controller.seek === "function") {
-              controller.seek(startAt);
+              // Seek after the embed has a moment to load the track.
+              window.setTimeout(() => {
+                try { controller.seek(startAt); } catch (_) { /* ignore */ }
+                try { controller.play(); } catch (_) { /* ignore */ }
+              }, 400);
             }
             controller.play();
           } catch (_) { /* user can press play in the embed */ }
           setPlayingUi(spotifyId, "embed");
           setPlayStatus(
             startAt
-              ? `Spotify Embed — from ${startAt}s (press play in the player if your browser blocks autoplay).`
-              : "Spotify Embed ready — press play in the player if needed.",
+              ? `Jump ${Math.floor(startAt / 60)}:${String(startAt % 60).padStart(2, "0")} — press ▶ in the Spotify player above if it didn’t start.`
+              : "Spotify player ready above — press ▶ there if audio didn’t start.",
           );
+          try {
+            $("play-bar").scrollIntoView({ behavior: "smooth", block: "nearest" });
+          } catch (_) { /* ignore */ }
         } catch (e) {
           setPlayingUi(null, null);
-          setPlayStatus("Couldn’t load Spotify Embed. (" + e.message + ")");
+          setPlayStatus("Couldn’t load Spotify player. (" + e.message + ")");
         }
       }
 
