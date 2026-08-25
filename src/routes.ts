@@ -144,9 +144,6 @@ async function persistGenerateResult(
       chips: LyricBoardChip[];
       score: number;
       keyBpmMatched: boolean;
-      keyMatched?: boolean;
-      bpmMatched?: boolean;
-      filters?: { key: boolean; bpm: boolean };
     }>;
     nextCursor: number | null;
     total: number;
@@ -783,8 +780,6 @@ export function registerRoutes(app: Express): void {
         songsPerBridge?: number;
         batchSize?: number;
         direction?: string;
-        matchKey?: boolean;
-        matchBpm?: boolean;
         matchKeyBpm?: boolean;
         cursor?: number;
       };
@@ -797,9 +792,7 @@ export function registerRoutes(app: Express): void {
         songsPerBridge,
         batchSize,
         direction: typeof body.direction === "string" ? body.direction : "",
-        matchKey: body.matchKey,
-        matchBpm: body.matchBpm,
-        matchKeyBpm: body.matchKeyBpm,
+        matchKeyBpm: body.matchKeyBpm !== false,
         cursor,
       });
       await persistGenerateResult(project.id, result, cursor);
@@ -888,8 +881,6 @@ export function registerRoutes(app: Express): void {
         songsPerBridge?: number;
         batchSize?: number;
         direction?: string;
-        matchKey?: boolean;
-        matchBpm?: boolean;
         matchKeyBpm?: boolean;
         cursor?: number;
       };
@@ -902,9 +893,7 @@ export function registerRoutes(app: Express): void {
         songsPerBridge,
         batchSize,
         direction: typeof body.direction === "string" ? body.direction : "",
-        matchKey: body.matchKey,
-        matchBpm: body.matchBpm,
-        matchKeyBpm: body.matchKeyBpm,
+        matchKeyBpm: body.matchKeyBpm !== false,
         cursor,
       });
       await persistGenerateResult(scope, result, cursor);

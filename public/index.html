@@ -1344,11 +1344,8 @@
                     <option value="50">50</option>
                   </select>
                 </label>
-                <label class="lb-switch" title="Prefer Camelot-compatible keys">
-                  <input type="checkbox" id="lb-match-key" checked /> Key match
-                </label>
-                <label class="lb-switch" title="Prefer close tempos (BPM)">
-                  <input type="checkbox" id="lb-match-bpm" checked /> BPM match
+                <label class="lb-switch" title="Prefer Camelot-compatible keys and close tempos">
+                  <input type="checkbox" id="lb-match-keybpm" checked /> Key / BPM match
                 </label>
                 <label>Direction
                   <input type="text" id="lb-direction" placeholder="optional e.g. romantic, party" />
@@ -3445,20 +3442,6 @@
         inp.onblur = () => finish(true);
       }
 
-      function lbFilterBadges(s) {
-        if (s.filters) {
-          if (!s.filters.key && !s.filters.bpm) {
-            return `<span class="badge jump-missing">Open</span>`;
-          }
-          return `${s.filters.key ? `<span class="badge jump-ok">Key</span>` : ""}${
-            s.filters.bpm ? `<span class="badge jump-ok">BPM</span>` : ""
-          }`;
-        }
-        return s.keyBpmMatched
-          ? `<span class="badge jump-ok">Key</span><span class="badge jump-ok">BPM</span>`
-          : `<span class="badge jump-missing">Open</span>`;
-      }
-
       function lbChipHtml(chip, index, { board = false, bridgeId = "" } = {}) {
         const cls = `lb-chip c${index % 4}`;
         const ms =
@@ -3499,7 +3482,7 @@
                 <button type="button" class="play tiny" data-lb-play="${idx}">▶</button>
                 <button type="button" class="secondary" data-lb-add="${idx}">Add to board</button>
                 <button type="button" class="secondary" data-lb-dismiss="${esc(s.hash)}">Dismiss</button>
-                ${lbFilterBadges(s)}
+                ${s.keyBpmMatched ? `<span class="badge jump-ok">Key/BPM</span>` : `<span class="badge jump-missing">Key/BPM off/miss</span>`}
               </div>
             </div>`;
           })
@@ -3779,8 +3762,7 @@
             songsPerBridge: Number($("lb-songs-per").value) || 2,
             batchSize: Number($("lb-batch").value) || 20,
             direction: $("lb-direction").value.trim(),
-            matchKey: $("lb-match-key").checked,
-            matchBpm: $("lb-match-bpm").checked,
+            matchKeyBpm: $("lb-match-keybpm").checked,
             cursor: more ? lbCursor : 0,
           };
           const data = await api(`${base}/generate`, {
@@ -3804,8 +3786,8 @@
           status.textContent =
             n === 0
               ? more
-                ? "No more suggestions in this run — try turning Key or BPM off, or changing direction."
-                : `No bridges found — ensure lyrics are fetched, or relax Key / BPM.${libHint}`
+                ? "No more suggestions in this run — try turning Key/BPM off or changing direction."
+                : `No bridges found — ensure lyrics are fetched, or relax Key/BPM.${libHint}`
               : `Showing ${lbSuggestions.length} suggestion${lbSuggestions.length === 1 ? "" : "s"}${
                   data.total ? ` (${data.total} scored this run)` : ""
                 } — remembered for next visit.`;

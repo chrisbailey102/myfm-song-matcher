@@ -24,9 +24,6 @@ export type LyricBoardSuggestion = {
   chips: LyricBoardChip[];
   score?: number;
   keyBpmMatched?: boolean;
-  keyMatched?: boolean;
-  bpmMatched?: boolean;
-  filters?: { key: boolean; bpm: boolean };
 };
 
 export type LyricBoardCanvas = {
