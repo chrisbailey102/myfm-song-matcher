@@ -29,7 +29,22 @@ export type UnmatchedLine = {
   reason: string;
 };
 
-const SEP = /\s+[-–—]\s+/;
+/** Prefer spaced dashes so hyphenated artists (Jay-Z - Song) still parse; allow Artist- Title etc. */
+function splitArtistTitle(line: string): { artist: string; title: string } | null {
+  const patterns = [
+    /\s+[-–—]\s+/, // Artist - Title
+    /[-–—]\s+/, // Artist- Title  / Artist– Title
+    /\s+[-–—]/ // Artist -Title
+  ];
+  for (const re of patterns) {
+    const m = re.exec(line);
+    if (!m || m.index == null) continue;
+    const artist = line.slice(0, m.index).trim();
+    const title = line.slice(m.index + m[0].length).trim();
+    if (artist && title) return { artist, title };
+  }
+  return null;
+}
 
 export function parseArtistTitleLines(text: string): {
   parsed: ParsedArtistTitle[];
@@ -42,22 +57,16 @@ export function parseArtistTitleLines(text: string): {
     const lineNo = i + 1;
     const line = raw.trim();
     if (!line || line.startsWith("#")) return;
-    const parts = line.split(SEP);
-    if (parts.length < 2) {
+    const split = splitArtistTitle(line);
+    if (!split) {
       unmatched.push({
         line,
         lineNo,
-        reason: 'Expected "ARTIST - TITLE"',
+        reason: 'Expected "ARTIST - TITLE" (spacing around the dash is optional)',
       });
       return;
     }
-    const artist = parts[0].trim();
-    const title = parts.slice(1).join(" - ").trim();
-    if (!artist || !title) {
-      unmatched.push({ line, lineNo, reason: "Missing artist or title" });
-      return;
-    }
-    parsed.push({ line, lineNo, artist, title });
+    parsed.push({ line, lineNo, artist: split.artist, title: split.title });
   });
   return { parsed, unmatched };
 }
