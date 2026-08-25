@@ -55,17 +55,12 @@ import {
 } from "./spotifyPlayback.js";
 import { listLyricsForSpotifyIds, searchProjectLyrics } from "./db/lyricsCache.js";
 import {
-  allCanvasChips,
   dismissLyricBridges,
   getLyricBoard,
-  libraryBoardScope,
-  normalizeCanvas,
   saveLyricBoard,
-  type LyricBoardCanvas,
   type LyricBoardChip,
 } from "./db/lyricBoards.js";
 import {
-  generateLibraryLyricBoardBridges,
   generateLyricBoardBridges,
   validateBoardChips,
   type BridgeChip,
@@ -75,94 +70,6 @@ import { getProjectPairs } from "./worker.js";
 import type { DbUser } from "./db/users.js";
 
 const oauthStates = new Map<string, number>();
-
-function chipsAsBridgeChips(chips: LyricBoardChip[]): BridgeChip[] {
-  return chips.map((c) => ({
-    id: String(c.id || crypto.randomUUID()),
-    spotifyId: String(c.spotifyId || ""),
-    artist: String(c.artist || ""),
-    title: String(c.title || ""),
-    text: String(c.text || ""),
-    startMs: c.startMs == null ? null : Number(c.startMs),
-    sourceIndex: Number(c.sourceIndex) || 0,
-    tempo: null,
-    camelot: "",
-  }));
-}
-
-async function putLyricBoardCanvas(
-  scopeKey: string,
-  body: unknown,
-): Promise<{ ok: true; canvas: LyricBoardCanvas } | { ok: false; status: number; error: string }> {
-  const existing = await getLyricBoard(scopeKey);
-  const raw = (body || {}) as {
-    bridges?: LyricBoardCanvas["bridges"];
-    chips?: LyricBoardChip[];
-    suggestions?: LyricBoardCanvas["suggestions"];
-    suggestCursor?: number;
-  };
-
-  // Merge: allow partial updates (e.g. suggestions-only) while keeping the other side.
-  const merged = normalizeCanvas({
-    bridges:
-      raw.bridges !== undefined
-        ? raw.bridges
-        : raw.chips !== undefined
-          ? raw.chips.length
-            ? [{ id: crypto.randomUUID(), chips: raw.chips }]
-            : []
-          : existing.canvas.bridges,
-    suggestions:
-      raw.suggestions !== undefined ? raw.suggestions : existing.canvas.suggestions,
-    suggestCursor:
-      raw.suggestCursor !== undefined
-        ? raw.suggestCursor
-        : existing.canvas.suggestCursor,
-  });
-
-  const chips = allCanvasChips(merged);
-  if (chips.length) {
-    const ids = [...new Set(chips.map((c) => c.spotifyId).filter(Boolean))];
-    const lyrics = await listLyricsForSpotifyIds(ids);
-    const plainById = new Map(
-      [...lyrics.entries()].map(([id, row]) => [id, row.plain_text]),
-    );
-    const check = validateBoardChips(chipsAsBridgeChips(chips), plainById);
-    if (!check.ok) return { ok: false, status: 400, error: check.error };
-  }
-
-  const canvas = await saveLyricBoard(scopeKey, merged);
-  return { ok: true, canvas };
-}
-
-async function persistGenerateResult(
-  scopeKey: string,
-  result: {
-    suggestions: Array<{
-      hash: string;
-      sentence: string;
-      chips: LyricBoardChip[];
-      score: number;
-      keyBpmMatched: boolean;
-    }>;
-    nextCursor: number | null;
-    total: number;
-  },
-  cursor: number,
-): Promise<void> {
-  const existing = await getLyricBoard(scopeKey);
-  const prev = existing.canvas.suggestions || [];
-  const suggestions =
-    cursor > 0 ? [...prev, ...(result.suggestions || [])] : result.suggestions || [];
-  // Cap stored suggestions so the row stays small
-  const capped = suggestions.slice(-120);
-  await saveLyricBoard(scopeKey, {
-    ...existing.canvas,
-    suggestions: capped,
-    suggestCursor:
-      result.nextCursor != null ? result.nextCursor : capped.length,
-  });
-}
 
 function cleanupOauthStates(): void {
   const cutoff = Date.now() - 600_000;
@@ -758,12 +665,34 @@ export function registerRoutes(app: Express): void {
         res.status(404).json({ error: "Project not found" });
         return;
       }
-      const result = await putLyricBoardCanvas(project.id, req.body);
-      if (!result.ok) {
-        res.status(result.status).json({ error: result.error });
+      const chips = (req.body as { chips?: LyricBoardChip[] })?.chips;
+      if (!Array.isArray(chips)) {
+        res.status(400).json({ error: "chips array required" });
         return;
       }
-      res.json({ ok: true, canvas: result.canvas });
+      const ids = [...new Set(chips.map((c) => c.spotifyId).filter(Boolean))];
+      const lyrics = await listLyricsForSpotifyIds(ids);
+      const plainById = new Map(
+        [...lyrics.entries()].map(([id, row]) => [id, row.plain_text]),
+      );
+      const asBridge: BridgeChip[] = chips.map((c) => ({
+        id: String(c.id || crypto.randomUUID()),
+        spotifyId: String(c.spotifyId || ""),
+        artist: String(c.artist || ""),
+        title: String(c.title || ""),
+        text: String(c.text || ""),
+        startMs: c.startMs == null ? null : Number(c.startMs),
+        sourceIndex: Number(c.sourceIndex) || 0,
+        tempo: null,
+        camelot: "",
+      }));
+      const check = validateBoardChips(asBridge, plainById);
+      if (!check.ok) {
+        res.status(400).json({ error: check.error });
+        return;
+      }
+      await saveLyricBoard(project.id, { chips });
+      res.json({ ok: true, canvas: { chips } });
     } catch (e) {
       res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
     }
@@ -787,15 +716,13 @@ export function registerRoutes(app: Express): void {
       const songsPerBridge = (sp === 3 || sp === 4 ? sp : 2) as 2 | 3 | 4;
       const bs = Number(body.batchSize) || 20;
       const batchSize = (bs === 10 || bs === 50 ? bs : 20) as 10 | 20 | 50;
-      const cursor = Number(body.cursor) || 0;
       const result = await generateLyricBoardBridges(project.id, {
         songsPerBridge,
         batchSize,
         direction: typeof body.direction === "string" ? body.direction : "",
         matchKeyBpm: body.matchKeyBpm !== false,
-        cursor,
+        cursor: Number(body.cursor) || 0,
       });
-      await persistGenerateResult(project.id, result, cursor);
       res.json(result);
     } catch (e) {
       res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
@@ -845,77 +772,6 @@ export function registerRoutes(app: Express): void {
         year: t.year,
       }));
       res.json({ tracks, songs, count });
-    } catch (e) {
-      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-    }
-  });
-
-  app.get("/api/library/lyric-board", requireAuth, async (req, res) => {
-    try {
-      const scope = libraryBoardScope(authed(req).id);
-      const board = await getLyricBoard(scope);
-      res.json(board);
-    } catch (e) {
-      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-    }
-  });
-
-  app.put("/api/library/lyric-board", requireAuth, async (req, res) => {
-    try {
-      const scope = libraryBoardScope(authed(req).id);
-      const result = await putLyricBoardCanvas(scope, req.body);
-      if (!result.ok) {
-        res.status(result.status).json({ error: result.error });
-        return;
-      }
-      res.json({ ok: true, canvas: result.canvas });
-    } catch (e) {
-      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-    }
-  });
-
-  app.post("/api/library/lyric-board/generate", requireAuth, async (req, res) => {
-    try {
-      const scope = libraryBoardScope(authed(req).id);
-      const body = req.body as {
-        songsPerBridge?: number;
-        batchSize?: number;
-        direction?: string;
-        matchKeyBpm?: boolean;
-        cursor?: number;
-      };
-      const sp = Number(body.songsPerBridge) || 2;
-      const songsPerBridge = (sp === 3 || sp === 4 ? sp : 2) as 2 | 3 | 4;
-      const bs = Number(body.batchSize) || 20;
-      const batchSize = (bs === 10 || bs === 50 ? bs : 20) as 10 | 20 | 50;
-      const cursor = Number(body.cursor) || 0;
-      const result = await generateLibraryLyricBoardBridges(authed(req).id, {
-        songsPerBridge,
-        batchSize,
-        direction: typeof body.direction === "string" ? body.direction : "",
-        matchKeyBpm: body.matchKeyBpm !== false,
-        cursor,
-      });
-      await persistGenerateResult(scope, result, cursor);
-      res.json(result);
-    } catch (e) {
-      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-    }
-  });
-
-  app.post("/api/library/lyric-board/dismiss", requireAuth, async (req, res) => {
-    try {
-      const scope = libraryBoardScope(authed(req).id);
-      const hashes = (req.body as { hashes?: string[] })?.hashes;
-      if (!Array.isArray(hashes) || !hashes.length) {
-        res.status(400).json({ error: "hashes array required" });
-        return;
-      }
-      const dismissed = await dismissLyricBridges(
-        scope,
-        hashes.map(String).filter(Boolean),
-      );
-      res.json({ ok: true, dismissed });
     } catch (e) {
       res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
     }

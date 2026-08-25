@@ -109,24 +109,11 @@ export async function migrate(): Promise<void> {
       `CREATE INDEX IF NOT EXISTS idx_projects_folder ON ${SEARCH_PATH}.projects(folder_id)`,
       `CREATE INDEX IF NOT EXISTS idx_folders_user ON ${SEARCH_PATH}.folders(user_id)`,
       `CREATE TABLE IF NOT EXISTS ${SEARCH_PATH}.lyric_boards (
-        scope_key TEXT PRIMARY KEY,
+        project_id TEXT PRIMARY KEY REFERENCES ${SEARCH_PATH}.projects(id) ON DELETE CASCADE,
         canvas_json TEXT NOT NULL DEFAULT '{"chips":[]}',
         dismissed_json TEXT NOT NULL DEFAULT '[]',
         updated_at BIGINT NOT NULL
       )`,
-      // Migrate early v1 boards keyed by project_id → scope_key (no FK)
-      `DO $$
-      BEGIN
-        IF EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_schema = '${SEARCH_PATH}'
-            AND table_name = 'lyric_boards'
-            AND column_name = 'project_id'
-        ) THEN
-          ALTER TABLE ${SEARCH_PATH}.lyric_boards DROP CONSTRAINT IF EXISTS lyric_boards_project_id_fkey;
-          ALTER TABLE ${SEARCH_PATH}.lyric_boards RENAME COLUMN project_id TO scope_key;
-        END IF;
-      END $$`,
     ]);
 
     // Backfill sort_order once when every playlist is still at the default 0
