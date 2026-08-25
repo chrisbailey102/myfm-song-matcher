@@ -108,12 +108,6 @@ export async function migrate(): Promise<void> {
       )`,
       `CREATE INDEX IF NOT EXISTS idx_projects_folder ON ${SEARCH_PATH}.projects(folder_id)`,
       `CREATE INDEX IF NOT EXISTS idx_folders_user ON ${SEARCH_PATH}.folders(user_id)`,
-      `CREATE TABLE IF NOT EXISTS ${SEARCH_PATH}.lyric_boards (
-        project_id TEXT PRIMARY KEY REFERENCES ${SEARCH_PATH}.projects(id) ON DELETE CASCADE,
-        canvas_json TEXT NOT NULL DEFAULT '{"chips":[]}',
-        dismissed_json TEXT NOT NULL DEFAULT '[]',
-        updated_at BIGINT NOT NULL
-      )`,
     ]);
 
     // Backfill sort_order once when every playlist is still at the default 0

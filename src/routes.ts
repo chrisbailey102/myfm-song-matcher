@@ -53,18 +53,7 @@ import {
   spotifyOpenUrl,
   startSpotifyPlayback,
 } from "./spotifyPlayback.js";
-import { listLyricsForSpotifyIds, searchProjectLyrics } from "./db/lyricsCache.js";
-import {
-  dismissLyricBridges,
-  getLyricBoard,
-  saveLyricBoard,
-  type LyricBoardChip,
-} from "./db/lyricBoards.js";
-import {
-  generateLyricBoardBridges,
-  validateBoardChips,
-  type BridgeChip,
-} from "./lyricBoardGenerate.js";
+import { searchProjectLyrics } from "./db/lyricsCache.js";
 import { resetCatalogData } from "./db/reset.js";
 import { getProjectPairs } from "./worker.js";
 import type { DbUser } from "./db/users.js";
@@ -639,113 +628,6 @@ export function registerRoutes(app: Express): void {
       const q = typeof req.query.q === "string" ? req.query.q : "";
       const hits = await searchProjectLyrics(project.id, q);
       res.json({ hits, count: hits.length, q });
-    } catch (e) {
-      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-    }
-  });
-
-  app.get("/api/projects/:id/lyric-board", requireAuth, async (req, res) => {
-    try {
-      const project = await getProjectById(req.params.id);
-      if (!project || project.user_id !== authed(req).id) {
-        res.status(404).json({ error: "Project not found" });
-        return;
-      }
-      const board = await getLyricBoard(project.id);
-      res.json(board);
-    } catch (e) {
-      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-    }
-  });
-
-  app.put("/api/projects/:id/lyric-board", requireAuth, async (req, res) => {
-    try {
-      const project = await getProjectById(req.params.id);
-      if (!project || project.user_id !== authed(req).id) {
-        res.status(404).json({ error: "Project not found" });
-        return;
-      }
-      const chips = (req.body as { chips?: LyricBoardChip[] })?.chips;
-      if (!Array.isArray(chips)) {
-        res.status(400).json({ error: "chips array required" });
-        return;
-      }
-      const ids = [...new Set(chips.map((c) => c.spotifyId).filter(Boolean))];
-      const lyrics = await listLyricsForSpotifyIds(ids);
-      const plainById = new Map(
-        [...lyrics.entries()].map(([id, row]) => [id, row.plain_text]),
-      );
-      const asBridge: BridgeChip[] = chips.map((c) => ({
-        id: String(c.id || crypto.randomUUID()),
-        spotifyId: String(c.spotifyId || ""),
-        artist: String(c.artist || ""),
-        title: String(c.title || ""),
-        text: String(c.text || ""),
-        startMs: c.startMs == null ? null : Number(c.startMs),
-        sourceIndex: Number(c.sourceIndex) || 0,
-        tempo: null,
-        camelot: "",
-      }));
-      const check = validateBoardChips(asBridge, plainById);
-      if (!check.ok) {
-        res.status(400).json({ error: check.error });
-        return;
-      }
-      await saveLyricBoard(project.id, { chips });
-      res.json({ ok: true, canvas: { chips } });
-    } catch (e) {
-      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-    }
-  });
-
-  app.post("/api/projects/:id/lyric-board/generate", requireAuth, async (req, res) => {
-    try {
-      const project = await getProjectById(req.params.id);
-      if (!project || project.user_id !== authed(req).id) {
-        res.status(404).json({ error: "Project not found" });
-        return;
-      }
-      const body = req.body as {
-        songsPerBridge?: number;
-        batchSize?: number;
-        direction?: string;
-        matchKeyBpm?: boolean;
-        cursor?: number;
-      };
-      const sp = Number(body.songsPerBridge) || 2;
-      const songsPerBridge = (sp === 3 || sp === 4 ? sp : 2) as 2 | 3 | 4;
-      const bs = Number(body.batchSize) || 20;
-      const batchSize = (bs === 10 || bs === 50 ? bs : 20) as 10 | 20 | 50;
-      const result = await generateLyricBoardBridges(project.id, {
-        songsPerBridge,
-        batchSize,
-        direction: typeof body.direction === "string" ? body.direction : "",
-        matchKeyBpm: body.matchKeyBpm !== false,
-        cursor: Number(body.cursor) || 0,
-      });
-      res.json(result);
-    } catch (e) {
-      res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
-    }
-  });
-
-  app.post("/api/projects/:id/lyric-board/dismiss", requireAuth, async (req, res) => {
-    try {
-      const project = await getProjectById(req.params.id);
-      if (!project || project.user_id !== authed(req).id) {
-        res.status(404).json({ error: "Project not found" });
-        return;
-      }
-      const hashes = (req.body as { hashes?: string[] })?.hashes;
-      if (!Array.isArray(hashes) || !hashes.length) {
-        res.status(400).json({ error: "hashes array required" });
-        return;
-      }
-      const dismissed = await dismissLyricBridges(
-        project.id,
-        hashes.map(String).filter(Boolean),
-      );
-      res.json({ ok: true, dismissed });
     } catch (e) {
       res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
     }

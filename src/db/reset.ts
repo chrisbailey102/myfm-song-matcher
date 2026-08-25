@@ -28,20 +28,14 @@ export async function resetCatalogData(): Promise<CatalogResetCounts> {
   // folders may not exist on very old DBs mid-migrate; ignore missing-table
   try {
     await exec(`
-      TRUNCATE TABLE songs, jobs, projects, folders, library_tracks, lyrics_cache, lyric_boards
+      TRUNCATE TABLE songs, jobs, projects, folders, library_tracks, lyrics_cache
     `);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (!/folders|lyric_boards/i.test(msg)) throw e;
-    try {
-      await exec(`
-        TRUNCATE TABLE songs, jobs, projects, folders, library_tracks, lyrics_cache
-      `);
-    } catch {
-      await exec(`
-        TRUNCATE TABLE songs, jobs, projects, library_tracks, lyrics_cache
-      `);
-    }
+    if (!/folders/i.test(msg)) throw e;
+    await exec(`
+      TRUNCATE TABLE songs, jobs, projects, library_tracks, lyrics_cache
+    `);
   }
 
   return {
