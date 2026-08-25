@@ -97,6 +97,104 @@ async function spotifyUserGet(accessToken: string, url: string, maxAttempts = 6)
   return last!;
 }
 
+async function spotifyUserJson(
+  accessToken: string,
+  url: string,
+  init: RequestInit,
+  maxAttempts = 6,
+): Promise<Response> {
+  let last: Response | null = null;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const res = await fetch(url, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        ...(init.headers || {}),
+      },
+    });
+    if (res.ok || (res.status !== 429 && res.status !== 502 && res.status !== 503)) {
+      return res;
+    }
+    last = res;
+    if (attempt === maxAttempts - 1) return res;
+    const wait = retryAfterMs(res, attempt);
+    console.warn(
+      `Spotify ${res.status} on playlist write — retry ${attempt + 1}/${maxAttempts - 1} in ${Math.round(wait / 1000)}s`,
+    );
+    await res.text().catch(() => undefined);
+    await sleep(wait);
+  }
+  return last!;
+}
+
+export async function createUserPlaylist(
+  accessToken: string,
+  opts: { name: string; description?: string; isPublic?: boolean },
+): Promise<{ id: string; name: string; url: string }> {
+  const res = await spotifyUserJson(accessToken, "https://api.spotify.com/v1/me/playlists", {
+    method: "POST",
+    body: JSON.stringify({
+      name: opts.name.trim(),
+      description: opts.description ?? "Created with Song Matcher",
+      public: Boolean(opts.isPublic),
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    if (res.status === 403 || /insufficient.?scope/i.test(body)) {
+      throw new Error(
+        "Spotify needs Reconnect for playlist create permission (account menu → Reconnect Spotify).",
+      );
+    }
+    throw new Error(`Create playlist failed: ${res.status} ${body}`);
+  }
+  const p = (await res.json()) as {
+    id: string;
+    name: string;
+    external_urls?: { spotify?: string };
+  };
+  return {
+    id: p.id,
+    name: p.name,
+    url: p.external_urls?.spotify || `https://open.spotify.com/playlist/${p.id}`,
+  };
+}
+
+/** Add track URIs to a playlist (batched, max 100 per request). */
+export async function addTracksToPlaylist(
+  accessToken: string,
+  playlistId: string,
+  trackUris: string[],
+): Promise<number> {
+  const unique = [...new Set(trackUris.map((u) => u.trim()).filter(Boolean))];
+  let added = 0;
+  const chunk = 100;
+  for (let i = 0; i < unique.length; i += chunk) {
+    const uris = unique.slice(i, i + chunk);
+    const res = await spotifyUserJson(
+      accessToken,
+      `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}/tracks`,
+      {
+        method: "POST",
+        body: JSON.stringify({ uris }),
+      },
+    );
+    if (!res.ok) {
+      const body = await res.text();
+      if (res.status === 403 || /insufficient.?scope/i.test(body)) {
+        throw new Error(
+          "Spotify needs Reconnect for playlist edit permission (account menu → Reconnect Spotify).",
+        );
+      }
+      throw new Error(`Add tracks failed: ${res.status} ${body}`);
+    }
+    added += uris.length;
+    if (i + chunk < unique.length) await sleep(150);
+  }
+  return added;
+}
+
 export async function fetchPlaylistMeta(
   accessToken: string,
   playlistId: string,

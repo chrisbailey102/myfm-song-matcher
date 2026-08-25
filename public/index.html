@@ -1220,6 +1220,25 @@
               <div class="status" id="create-status" hidden></div>
             </section>
 
+            <section class="panel import-card" aria-labelledby="import-paste-heading">
+              <h2 id="import-paste-heading">Paste track list</h2>
+              <p class="hint" style="margin-top:0">Paste <strong>ARTIST - TITLE</strong> lines (one per line). Creates a Spotify playlist and imports it into Song Matcher. After deploy, use <strong>Reconnect Spotify</strong> once so playlist-create permission is granted.</p>
+              <div class="row">
+                <label>Name</label>
+                <input type="text" id="paste-playlist-name" placeholder="e.g. Friday setlist" />
+              </div>
+              <div class="row" style="align-items:flex-start">
+                <label style="padding-top:0.55rem">Tracks</label>
+                <textarea id="paste-track-list" rows="8" placeholder="Artist - Title&#10;Another Artist – Another Title" style="flex:1;min-width:0;width:100%;font:inherit;padding:0.55rem 0.7rem;border:1px solid var(--line);border-radius:8px;resize:vertical"></textarea>
+              </div>
+              <div class="row">
+                <button type="button" id="btn-paste-playlist">Create Spotify playlist</button>
+                <button type="button" id="btn-cancel-import-paste" class="secondary">Cancel</button>
+              </div>
+              <div class="status" id="paste-status" hidden></div>
+              <div id="paste-unmatched" class="hint" style="margin-top:0.65rem"></div>
+            </section>
+
             <section class="panel import-card" aria-labelledby="import-custom-heading">
               <h2 id="import-custom-heading">Custom playlist</h2>
               <p class="hint" style="margin-top:0">Create an empty playlist, then drag tracks from Entire Library or other playlists to copy them in. Right-click a track (or Delete / Backspace) to remove it.</p>
@@ -1684,8 +1703,9 @@
         } else {
           $("play-bar").hidden = true;
         }
+        // Always show the Embed card for artwork/controls (audio may be Web Playback).
         const host = $("spotify-embed-host");
-        if (host) host.hidden = playMode === "web" || playMode === "device";
+        if (host) host.hidden = false;
         document.querySelectorAll("button.play[data-play]").forEach((btn) => {
           const id = btn.getAttribute("data-play");
           const on = Boolean(nowPlayingId && id === nowPlayingId);
@@ -1693,6 +1713,20 @@
           btn.textContent = on ? "■" : "▶";
           btn.title = on ? "Pause" : "Play (Premium — jumps to lyric time when available)";
         });
+      }
+
+      /** Load track into Embed for display only — do not start Embed audio (avoids double play). */
+      async function syncEmbedVisual(spotifyId) {
+        if (!spotifyId) return;
+        try {
+          const uri = `spotify:track:${spotifyId}`;
+          const controller = await ensureEmbedController(uri);
+          if (typeof controller.loadEntity === "function") {
+            controller.loadEntity(uri, false, 0);
+          } else if (typeof controller.loadUri === "function") {
+            controller.loadUri(uri, false, 0);
+          }
+        } catch (_) { /* visual sync is best-effort */ }
       }
 
       async function stopPlayback() {
@@ -2073,6 +2107,7 @@
             try { await webPlayer?.activateElement?.(); } catch (_) { /* ignore */ }
             try { await webPlayer?.resume?.(); } catch (_) { /* ignore */ }
             setPlayingUi(spotifyId, result.mode === "web" ? "web" : "device");
+            void syncEmbedVisual(spotifyId);
             setPlayStatus(
               ms > 0
                 ? `Playing from ${formatClockFromMs(ms)} (Premium).`
@@ -2093,6 +2128,7 @@
           if (retry.ok) {
             try { await webPlayer?.resume?.(); } catch (_) { /* ignore */ }
             setPlayingUi(spotifyId, "device");
+            void syncEmbedVisual(spotifyId);
             setPlayStatus(
               ms > 0
                 ? `Playing from ${formatClockFromMs(ms)} on your Spotify device.`
@@ -2877,6 +2913,7 @@
         else $("empty-state").hidden = false;
       };
       $("btn-cancel-import-custom").onclick = () => $("btn-cancel-import").click();
+      $("btn-cancel-import-paste").onclick = () => $("btn-cancel-import").click();
 
       $("btn-create-custom").onclick = async () => {
         const st = $("custom-status");
@@ -2899,6 +2936,66 @@
           openProject(project.id);
         } catch (e) {
           st.textContent = "Error: " + e.message;
+        }
+      };
+
+      $("btn-paste-playlist").onclick = async () => {
+        const st = $("paste-status");
+        const unmatchedBox = $("paste-unmatched");
+        st.hidden = false;
+        unmatchedBox.innerHTML = "";
+        const name = $("paste-playlist-name").value.trim();
+        const text = $("paste-track-list").value;
+        if (!text.trim()) {
+          st.textContent = "Paste at least one ARTIST - TITLE line.";
+          return;
+        }
+        const lineCount = text.split(/\r?\n/).filter((l) => l.trim() && !l.trim().startsWith("#")).length;
+        st.textContent = `Matching ${lineCount} line${lineCount === 1 ? "" : "s"} on Spotify… (can take a minute)`;
+        $("btn-paste-playlist").disabled = true;
+        try {
+          const data = await api("/api/spotify/playlist-from-text", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: name || undefined,
+              text,
+              isPublic: false,
+              importToApp: true,
+            }),
+          });
+          const matchedN = (data.matched || []).length;
+          const unmatchedN = (data.unmatched || []).length;
+          const plUrl = data.playlist?.url || "";
+          st.innerHTML =
+            `Created <strong>${esc(data.playlist?.name || "playlist")}</strong> with ${matchedN} track${matchedN === 1 ? "" : "s"}` +
+            (unmatchedN ? ` · ${unmatchedN} unmatched` : "") +
+            (plUrl
+              ? ` · <a href="${esc(plUrl)}" target="_blank" rel="noopener">Open in Spotify</a>`
+              : "") +
+            ".";
+          if (unmatchedN) {
+            unmatchedBox.innerHTML =
+              `<p style="margin:0 0 0.35rem"><strong>Unmatched</strong></p><ul style="margin:0;padding-left:1.2rem">` +
+              (data.unmatched || [])
+                .map(
+                  (u) =>
+                    `<li style="margin:0.2rem 0"><code>${esc(u.line)}</code> — ${esc(u.reason)}</li>`,
+                )
+                .join("") +
+              `</ul>`;
+          }
+          $("paste-track-list").value = "";
+          if (data.project?.id) {
+            awaitImportSuccessFor = data.project.id;
+            await refreshSidebar();
+            $("import-panel").hidden = true;
+            openProject(data.project.id);
+          }
+        } catch (e) {
+          st.textContent = "Error: " + (e.message || e);
+        } finally {
+          $("btn-paste-playlist").disabled = false;
         }
       };
 

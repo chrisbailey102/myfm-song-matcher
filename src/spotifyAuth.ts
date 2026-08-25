@@ -6,6 +6,8 @@ import { getUserById, updateUserTokens, upsertUser, type DbUser } from "./db/use
 const SCOPES = [
   "playlist-read-private",
   "playlist-read-collaborative",
+  "playlist-modify-private",
+  "playlist-modify-public",
   "user-read-email",
   "user-read-private",
   "streaming",

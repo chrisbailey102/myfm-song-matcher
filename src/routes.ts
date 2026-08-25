@@ -47,6 +47,7 @@ import {
   fetchUserPlaylists,
   parsePlaylistId,
 } from "./spotifyPlaylist.js";
+import { createPlaylistFromArtistTitleText } from "./playlistFromText.js";
 import {
   fetchTrackPreviewUrl,
   pauseSpotifyPlayback,
@@ -550,6 +551,74 @@ export function registerRoutes(app: Express): void {
       res.json({ project, job });
     } catch (e) {
       res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  /**
+   * Paste ARTIST - TITLE lines → create a Spotify playlist → import into Song Matcher.
+   * Requires playlist-modify scopes (Reconnect Spotify if create fails with permission error).
+   */
+  app.post("/api/spotify/playlist-from-text", requireAuth, async (req, res) => {
+    try {
+      const user = authed(req);
+      const body = req.body as {
+        name?: string;
+        text?: string;
+        lines?: string;
+        isPublic?: boolean;
+        importToApp?: boolean;
+      };
+      const text = String(body.text ?? body.lines ?? "");
+      const name = String(body.name || "").trim();
+      if (!text.trim()) {
+        res.status(400).json({ error: "Paste ARTIST - TITLE lines in text" });
+        return;
+      }
+      const token = await ensureUserAccessToken(user);
+      const result = await createPlaylistFromArtistTitleText(token, {
+        name: name || "Song Matcher playlist",
+        text,
+        isPublic: body.isPublic === true,
+      });
+
+      let project = null;
+      let job = null;
+      const shouldImport = body.importToApp !== false;
+      if (shouldImport) {
+        project = await createProject({
+          user_id: user.id,
+          name: name || result.playlist.name,
+          brief: "",
+          playlist_id: result.playlist.id,
+          playlist_name: result.playlist.name,
+          playlist_url: result.playlist.url,
+        });
+        job = await createJob(project.id, "enrich");
+      }
+
+      res.json({
+        ok: true,
+        playlist: result.playlist,
+        tracksAdded: result.tracksAdded,
+        matched: result.matched.map((m) => ({
+          line: m.line,
+          lineNo: m.lineNo,
+          artist: m.artist,
+          title: m.title,
+          spotifyId: m.spotifyId,
+          matchedArtist: m.matchedArtist,
+          matchedTitle: m.matchedTitle,
+          matchConfidence: m.matchConfidence,
+          needsReview: m.needsReview,
+        })),
+        unmatched: result.unmatched,
+        project,
+        job,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const status = /Reconnect Spotify|insufficient.?scope/i.test(msg) ? 403 : 400;
+      res.status(status).json({ error: msg });
     }
   });
 
