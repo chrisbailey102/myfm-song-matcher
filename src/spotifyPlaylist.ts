@@ -142,12 +142,12 @@ export async function createUserPlaylist(
   });
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 403 || /insufficient.?scope/i.test(body)) {
+    if (res.status === 403 && /insufficient.?scope/i.test(body)) {
       throw new Error(
-        "Spotify needs Reconnect for playlist create permission (account menu → Reconnect Spotify).",
+        "Spotify needs Reconnect for playlist create permission (account menu → Reconnect Spotify). On the consent screen, allow playlist editing.",
       );
     }
-    throw new Error(`Create playlist failed: ${res.status} ${body}`);
+    throw new Error(`Create playlist failed: ${res.status} ${body.slice(0, 400)}`);
   }
   const p = (await res.json()) as {
     id: string;
@@ -161,7 +161,9 @@ export async function createUserPlaylist(
   };
 }
 
-/** Add track URIs to a playlist (batched, max 100 per request). */
+/** Add track URIs to a playlist (batched, max 100 per request).
+ * Feb 2026+: must use POST /playlists/{id}/items ( /tracks returns 403 in Dev Mode ).
+ */
 export async function addTracksToPlaylist(
   accessToken: string,
   playlistId: string,
@@ -174,7 +176,7 @@ export async function addTracksToPlaylist(
     const uris = unique.slice(i, i + chunk);
     const res = await spotifyUserJson(
       accessToken,
-      `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}/tracks`,
+      `https://api.spotify.com/v1/playlists/${encodeURIComponent(playlistId)}/items`,
       {
         method: "POST",
         body: JSON.stringify({ uris }),
@@ -182,12 +184,12 @@ export async function addTracksToPlaylist(
     );
     if (!res.ok) {
       const body = await res.text();
-      if (res.status === 403 || /insufficient.?scope/i.test(body)) {
+      if (res.status === 403 && /insufficient.?scope/i.test(body)) {
         throw new Error(
-          "Spotify needs Reconnect for playlist edit permission (account menu → Reconnect Spotify).",
+          "Spotify needs Reconnect for playlist edit permission (account menu → Reconnect Spotify). On the consent screen, allow playlist editing.",
         );
       }
-      throw new Error(`Add tracks failed: ${res.status} ${body}`);
+      throw new Error(`Add tracks failed: ${res.status} ${body.slice(0, 400)}`);
     }
     added += uris.length;
     if (i + chunk < unique.length) await sleep(150);
