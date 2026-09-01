@@ -881,6 +881,32 @@
       .pair-card:nth-child(even) {
         background: #eef3f9;
       }
+      .am-quality {
+        display: inline-block;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 0.15rem 0.45rem;
+        border-radius: 6px;
+        border: 1px solid var(--line);
+      }
+      .am-quality.great { background: #d8f3e0; color: #1b5e2f; border-color: #9fd4b0; }
+      .am-quality.good { background: #e7f0ff; color: #1e3a6e; border-color: #b3c9ef; }
+      .am-quality.ok { background: #fff4d6; color: #6b4e00; border-color: #e6d090; }
+      .am-quality.weak { background: #fce8e8; color: #7a1f1f; border-color: #e2a8a8; }
+      .am-trans {
+        font-size: 0.78rem;
+        color: var(--muted);
+        padding: 0.2rem 0.85rem 0.55rem 3.2rem;
+      }
+      table.mik.am-table td.num-pos {
+        font-variant-numeric: tabular-nums;
+        font-weight: 700;
+        color: var(--muted);
+        width: 2.5rem;
+        text-align: center;
+      }
       .pair-song {
         display: grid;
         grid-template-columns: 2.5rem 2.2rem minmax(0, 1fr) 4.5rem 4.5rem;
@@ -1348,6 +1374,7 @@
               <div class="detail-actions">
                 <button type="button" id="btn-refresh-spotify" class="secondary" hidden>Update from Spotify</button>
                 <button type="button" id="btn-backfill-meta" class="secondary" hidden>Fill missing BPM/key/energy</button>
+                <button type="button" id="btn-automix" class="secondary" hidden>Auto-mix</button>
                 <button type="button" id="btn-export-csv" class="secondary">Download CSV</button>
               </div>
             </div>
@@ -1355,6 +1382,7 @@
             <div class="tabs" id="main-tabs">
               <button type="button" class="active" data-tab="tracks" id="tab-btn-tracks">Tracks</button>
               <button type="button" data-tab="pairs" id="tab-btn-pairs">Pair candidates</button>
+              <button type="button" data-tab="automix" id="tab-btn-automix" disabled title="Open a playlist to auto-mix">Auto-mix</button>
             </div>
 
             <p class="status" id="play-status" style="margin:0.35rem 0 0.35rem"></p>
@@ -1383,13 +1411,14 @@
               <div class="track-head">
                 <input type="text" id="lyric-q" placeholder="Search lyrics…" style="width:min(280px,100%)" />
                 <button type="button" id="btn-lyric-search" class="secondary">Search</button>
-                <span class="hint" style="margin:0">Drag tracks onto a playlist to copy · right-click or Delete/Backspace to remove · double-click tempo/key · ▶ plays via Spotify Premium (lyric search jumps to the line)</span>
+                <span class="hint" style="margin:0">Drag tracks onto a playlist to copy · right-click for BPM/key pairs or remove · double-click tempo/key · ▶ plays via Spotify Premium (lyric search jumps to the line)</span>
               </div>
               <div id="lyric-results" class="hint"></div>
               <div class="mik-wrap" id="songs-table"></div>
             </div>
 
             <div id="tab-pairs" hidden>
+              <p class="hint" id="pairs-seed-banner" hidden style="margin:0 0 0.55rem"></p>
               <div class="filters" id="pair-filters">
                 <div class="row">
                   <label>Scope</label>
@@ -1412,9 +1441,40 @@
                   <input type="number" id="flt-year-max" placeholder="to" style="width:5rem" />
                   <label><input type="checkbox" id="flt-bridge" /> Require lyric bridge</label>
                   <button type="button" id="btn-load-pairs">Refresh pairs</button>
+                  <button type="button" id="btn-clear-pair-seed" class="secondary" hidden>Show all pairs</button>
                 </div>
               </div>
               <div class="mik-wrap" id="pairs-table"></div>
+            </div>
+
+            <div id="tab-automix" hidden>
+              <p class="hint" style="margin:0 0 0.55rem">
+                Orders this playlist into a mixable sequence using BPM + Camelot key only (DJ.Studio-style Harmonize). Works best with ~10+ tracks that have tempo and key filled in.
+              </p>
+              <div class="filters" id="automix-filters">
+                <div class="row">
+                  <label>Tracks</label>
+                  <input type="number" id="am-max-tracks" min="2" max="200" value="20" style="width:4.5rem" title="How many songs to include in the mix" />
+                  <label>Style</label>
+                  <select id="am-mode">
+                    <option value="mood">Mood (classic Camelot)</option>
+                    <option value="fuzzy">Fuzzy (number-focused)</option>
+                  </select>
+                  <label>BPM soft ±</label>
+                  <input type="number" id="am-bpm" value="12" min="4" max="40" style="width:4rem" />
+                </div>
+                <div class="row" style="align-items:center">
+                  <label>Priority</label>
+                  <span class="hint" style="margin:0">BPM</span>
+                  <input type="range" id="am-key-weight" min="0" max="100" value="55" style="width:min(220px,40%)" aria-label="Key vs BPM priority" />
+                  <span class="hint" style="margin:0">Key</span>
+                  <span class="hint" id="am-key-weight-label" style="margin:0;min-width:3rem">55%</span>
+                  <button type="button" id="btn-run-automix">Generate mix</button>
+                  <button type="button" id="btn-automix-spotify" class="secondary" hidden>Save to Spotify playlist</button>
+                </div>
+              </div>
+              <p class="hint" id="automix-summary" style="margin:0.5rem 0"></p>
+              <div class="mik-wrap" id="automix-table"></div>
             </div>
           </div>
 
@@ -1441,6 +1501,7 @@
       <button type="button" id="ctx-folder-delete" class="danger" role="menuitem">Delete folder</button>
     </div>
     <div id="track-ctx" class="ctx-menu" role="menu" hidden>
+      <button type="button" id="ctx-find-pairs" role="menuitem">Find BPM/key pairs</button>
       <button type="button" id="ctx-remove-track" class="danger" role="menuitem">Remove from playlist</button>
     </div>
     </div><!-- #spotify-app -->
@@ -3080,6 +3141,11 @@
         hideTrackCtx();
         if (id) await removeTrackFromPlaylist(id);
       };
+      $("ctx-find-pairs").onclick = () => {
+        const id = ctxTrackId;
+        hideTrackCtx();
+        if (id) void findPairsForSong(id);
+      };
       $("track-ctx").addEventListener("click", (ev) => ev.stopPropagation());
       $("playlist-ctx").addEventListener("click", (ev) => ev.stopPropagation());
       $("folder-ctx").addEventListener("click", (ev) => ev.stopPropagation());
@@ -3323,18 +3389,38 @@
         }
       };
 
-      let contentTab = "tracks"; // 'tracks' | 'pairs'
+      let contentTab = "tracks"; // 'tracks' | 'pairs' | 'automix'
       let pairsLoadedFor = null;
+      /** When set, Pair candidates shows BPM/key matches for this playlist song only. */
+      let pairSeedSongId = null;
+      let pairSeedMeta = null; // { artist, title }
+      let pairHarmonicOnly = false;
+      let automixCache = null;
+      let automixLoadedFor = null;
 
       function setContentTab(tab) {
         contentTab = tab;
         $("tab-btn-tracks").classList.toggle("active", tab === "tracks");
         $("tab-btn-pairs").classList.toggle("active", tab === "pairs");
+        $("tab-btn-automix").classList.toggle("active", tab === "automix");
         $("tab-tracks").hidden = tab !== "tracks";
         $("tab-pairs").hidden = tab !== "pairs";
+        $("tab-automix").hidden = tab !== "automix";
         if (tab === "pairs" && viewMode === "project" && currentProjectId) {
           if (pairsLoadedFor !== currentProjectId || !pairsCache.length) {
             void loadPairs();
+          }
+        }
+        if (tab === "automix" && viewMode === "project" && currentProjectId) {
+          syncAutomixDefaults();
+          if (automixLoadedFor !== currentProjectId || !automixCache) {
+            // leave empty until Generate — just refresh defaults
+            if (!automixCache) {
+              $("automix-summary").textContent =
+                "Set track count and priority, then Generate mix.";
+              $("automix-table").innerHTML = "";
+              $("btn-automix-spotify").hidden = true;
+            }
           }
         }
       }
@@ -3344,6 +3430,14 @@
         if (viewMode !== "project") return;
         setContentTab("pairs");
       };
+      $("tab-btn-automix").onclick = () => {
+        if (viewMode !== "project") return;
+        setContentTab("automix");
+      };
+      $("btn-automix").onclick = () => {
+        if (viewMode !== "project") return;
+        setContentTab("automix");
+      };
 
       async function openLibrary() {
         viewMode = "library";
@@ -3351,6 +3445,9 @@
         selectedSongId = null;
         allowInlineEdit = false;
         pairsLoadedFor = null;
+        pairSeedSongId = null;
+        pairSeedMeta = null;
+        pairHarmonicOnly = false;
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = null;
         $("empty-state").hidden = true;
@@ -3359,6 +3456,11 @@
         $("project-detail").hidden = false;
         $("tab-btn-pairs").disabled = true;
         $("tab-btn-pairs").title = "Open a playlist to see pair candidates";
+        $("tab-btn-automix").disabled = true;
+        $("tab-btn-automix").title = "Open a playlist to auto-mix";
+        $("btn-automix").hidden = true;
+        automixCache = null;
+        automixLoadedFor = null;
         setContentTab("tracks");
         $("detail-title").textContent = "Entire Library";
         $("detail-meta").hidden = true;
@@ -3386,16 +3488,27 @@
         selectedSongId = null;
         allowInlineEdit = true;
         pairsLoadedFor = null;
+        pairSeedSongId = null;
+        pairSeedMeta = null;
+        pairHarmonicOnly = false;
+        automixCache = null;
+        automixLoadedFor = null;
         $("empty-state").hidden = true;
         $("import-panel").hidden = true;
         $("settings-panel").hidden = true;
         $("project-detail").hidden = false;
         $("tab-btn-pairs").disabled = false;
         $("tab-btn-pairs").title = "";
+        $("tab-btn-automix").disabled = false;
+        $("tab-btn-automix").title = "";
+        $("btn-automix").hidden = false;
         setContentTab("tracks");
         $("lyric-results").innerHTML = "";
         $("lyric-q").value = "";
         $("pairs-table").innerHTML = "";
+        $("automix-table").innerHTML = "";
+        $("automix-summary").textContent = "";
+        $("btn-automix-spotify").hidden = true;
         pairsCache = [];
         setActiveSidebar("project", id);
         await loadProjectDetail();
@@ -3564,6 +3677,7 @@
           <th data-sort="tempo" class="num">Tempo</th>
           <th data-sort="camelot" class="key">Key result</th>
           <th data-sort="energy" class="energy">Energy</th>
+          <th></th>
         </tr>`;
         const tbody = sorted
           .map((s) => {
@@ -3571,6 +3685,10 @@
             const camelot = effectiveCamelot(s);
             const unknownArtist = !s.artist || /^unknown$/i.test(s.artist);
             const tempoOverridden = s.tempo_override != null && s.tempo_override !== "";
+            const pairsBtn =
+              viewMode === "project"
+                ? `<button type="button" class="secondary" data-find-pairs="${esc(s.id)}" title="Find BPM/key pairs in this playlist" style="font-size:0.75rem;padding:0.25rem 0.55rem">Pairs</button>`
+                : "";
             return `<tr data-id="${esc(s.id)}" data-spotify="${esc(s.spotify_id_resolved)}" draggable="true" class="${selectedSongId === s.id ? "selected" : ""}">
             <td class="play-cell"><button type="button" class="play" data-play="${esc(s.spotify_id_resolved)}" title="Play">▶</button></td>
             <td class="artist${unknownArtist ? " unknown" : ""}">${esc(s.artist || "Unknown")}</td>
@@ -3578,6 +3696,7 @@
             <td class="num editable" data-f="tempo_override" title="Double-click to override">${tempoOverridden ? `<strong>${esc(tempo)}</strong>` : esc(tempo)}</td>
             <td class="key editable" data-f="camelot_override" title="Double-click to override">${keyBadge(camelot)}</td>
             <td class="energy">${esc(energyLevel(s))}</td>
+            <td class="play-cell">${pairsBtn}</td>
           </tr>`;
           })
           .join("");
@@ -3587,6 +3706,12 @@
           btn.onclick = (ev) => {
             ev.stopPropagation();
             playTrack(btn.getAttribute("data-play"), 0);
+          };
+        });
+        el.querySelectorAll("[data-find-pairs]").forEach((btn) => {
+          btn.onclick = (ev) => {
+            ev.stopPropagation();
+            void findPairsForSong(btn.getAttribute("data-find-pairs"));
           };
         });
         el.querySelectorAll("tbody tr").forEach((tr) => {
@@ -3748,12 +3873,37 @@
         </details>`;
       }
 
+      function updatePairsSeedBanner() {
+        const banner = $("pairs-seed-banner");
+        const clearBtn = $("btn-clear-pair-seed");
+        const lyricInput = $("flt-lyric");
+        const bridgeInput = $("flt-bridge");
+        if (!banner || !clearBtn) return;
+        if (pairSeedSongId && pairSeedMeta) {
+          banner.hidden = false;
+          banner.innerHTML = `BPM/key pairs for <strong>${esc(pairSeedMeta.artist)}</strong> — <strong>${esc(pairSeedMeta.title)}</strong> (lyrics ignored).`;
+          clearBtn.hidden = false;
+          if (lyricInput) lyricInput.disabled = true;
+          if (bridgeInput) bridgeInput.disabled = true;
+        } else {
+          banner.hidden = true;
+          banner.textContent = "";
+          clearBtn.hidden = true;
+          if (lyricInput) lyricInput.disabled = false;
+          if (bridgeInput) bridgeInput.disabled = false;
+        }
+      }
+
       function renderPairs() {
         const el = $("pairs-table");
+        updatePairsSeedBanner();
         if (!pairsCache.length) {
-          el.innerHTML = "<p class='hint' style='padding:1rem'>No pairs loaded.</p>";
+          el.innerHTML = pairSeedSongId
+            ? "<p class='hint' style='padding:1rem'>No BPM/key matches in this playlist (need tempo + Camelot on both songs; try widening BPM ±).</p>"
+            : "<p class='hint' style='padding:1rem'>No pairs loaded.</p>";
           return;
         }
+        const seedSpotify = pairSeedMeta?.spotifyId || null;
         const getters = {
           song_a_artist: (r) => r.song_a_artist,
           song_a_title: (r) => r.song_a_title,
@@ -3772,11 +3922,17 @@
           getters[pairSort.key] || ((r) => r[pairSort.key]),
         );
         const show = sorted.slice(0, 200);
-        const sortBtns = [
-          ["harmonic_score", "Harmonic"],
-          ["bpm_delta", "BPM Δ"],
-          ["lyric_score", "Lyric"],
-        ]
+        const sortKeys = pairHarmonicOnly
+          ? [
+              ["harmonic_score", "Harmonic"],
+              ["bpm_delta", "BPM Δ"],
+            ]
+          : [
+              ["harmonic_score", "Harmonic"],
+              ["bpm_delta", "BPM Δ"],
+              ["lyric_score", "Lyric"],
+            ];
+        const sortBtns = sortKeys
           .map(
             ([key, label]) =>
               `<button type="button" data-pair-sort="${key}" class="${pairSort.key === key ? "active" : ""}">${label}${
@@ -3792,35 +3948,77 @@
           </div>
           <div class="pair-list">${show
             .map((r) => {
-              const bpmA = Math.round(Number(r.bpm_a) || 0) || "—";
-              const bpmB = Math.round(Number(r.bpm_b) || 0) || "—";
+              let partner = {
+                artist: r.song_b_artist,
+                title: r.song_b_title,
+                spotifyId: r.song_b_spotify_id,
+                bpm: r.bpm_b,
+                camelot: r.camelot_b,
+              };
+              let seedSide = {
+                artist: r.song_a_artist,
+                title: r.song_a_title,
+                spotifyId: r.song_a_spotify_id,
+                bpm: r.bpm_a,
+                camelot: r.camelot_a,
+              };
+              if (seedSpotify && r.song_b_spotify_id === seedSpotify) {
+                partner = {
+                  artist: r.song_a_artist,
+                  title: r.song_a_title,
+                  spotifyId: r.song_a_spotify_id,
+                  bpm: r.bpm_a,
+                  camelot: r.camelot_a,
+                };
+                seedSide = {
+                  artist: r.song_b_artist,
+                  title: r.song_b_title,
+                  spotifyId: r.song_b_spotify_id,
+                  bpm: r.bpm_b,
+                  camelot: r.camelot_b,
+                };
+              }
+              const bpmSeed = Math.round(Number(seedSide.bpm) || 0) || "—";
+              const bpmPartner = Math.round(Number(partner.bpm) || 0) || "—";
               const delta = Math.round(Number(r.bpm_delta) || 0);
+              const bridge = pairHarmonicOnly
+                ? ""
+                : renderBridgeHtml(
+                    r.bridge_phrases,
+                    seedSide.spotifyId,
+                    partner.spotifyId,
+                    r.lyric_score,
+                    r.notes,
+                  );
+              const lyricMeta = pairHarmonicOnly
+                ? ""
+                : `<span>Lyric <strong>${Number(r.lyric_score).toFixed(2)}</strong></span>`;
               return `<article class="pair-card">
                 <div class="pair-song">
-                  <div class="lane">A</div>
-                  <div class="play-cell"><button type="button" class="play tiny" data-play="${esc(r.song_a_spotify_id)}" title="Play A">▶</button></div>
+                  <div class="lane">${pairSeedSongId ? "Seed" : "A"}</div>
+                  <div class="play-cell"><button type="button" class="play tiny" data-play="${esc(seedSide.spotifyId)}" title="Play">▶</button></div>
                   <div class="who">
-                    <div class="artist">${esc(r.song_a_artist)}</div>
-                    <div class="title">${esc(r.song_a_title)}</div>
+                    <div class="artist">${esc(seedSide.artist)}</div>
+                    <div class="title">${esc(seedSide.title)}</div>
                   </div>
-                  <div class="bpm"><span>BPM</span>${esc(bpmA)}</div>
-                  <div class="key-cell">${keyBadge(r.camelot_a)}</div>
+                  <div class="bpm"><span>BPM</span>${esc(bpmSeed)}</div>
+                  <div class="key-cell">${keyBadge(seedSide.camelot)}</div>
                 </div>
                 <div class="pair-song">
-                  <div class="lane">B</div>
-                  <div class="play-cell"><button type="button" class="play tiny" data-play="${esc(r.song_b_spotify_id)}" title="Play B">▶</button></div>
+                  <div class="lane">${pairSeedSongId ? "Match" : "B"}</div>
+                  <div class="play-cell"><button type="button" class="play tiny" data-play="${esc(partner.spotifyId)}" title="Play">▶</button></div>
                   <div class="who">
-                    <div class="artist">${esc(r.song_b_artist)}</div>
-                    <div class="title">${esc(r.song_b_title)}</div>
+                    <div class="artist">${esc(partner.artist)}</div>
+                    <div class="title">${esc(partner.title)}</div>
                   </div>
-                  <div class="bpm"><span>BPM</span>${esc(bpmB)}</div>
-                  <div class="key-cell">${keyBadge(r.camelot_b)}</div>
+                  <div class="bpm"><span>BPM</span>${esc(bpmPartner)}</div>
+                  <div class="key-cell">${keyBadge(partner.camelot)}</div>
                 </div>
-                ${renderBridgeHtml(r.bridge_phrases, r.song_a_spotify_id, r.song_b_spotify_id, r.lyric_score, r.notes)}
+                ${bridge}
                 <div class="pair-meta">
                   <span>Δ BPM <strong>${esc(delta)}</strong></span>
                   <span>Harmonic <strong>${Number(r.harmonic_score).toFixed(2)}</strong></span>
-                  <span>Lyric <strong>${Number(r.lyric_score).toFixed(2)}</strong></span>
+                  ${lyricMeta}
                   ${r.key_relationship ? `<span>${esc(r.key_relationship)}</span>` : ""}
                 </div>
               </article>`;
@@ -3850,26 +4048,199 @@
         const params = new URLSearchParams({
           mode: $("pair-mode").value,
           bpmTolerance: $("flt-bpm").value || "10",
-          minLyricScore: $("flt-lyric").value || "0",
+          minLyricScore: pairHarmonicOnly ? "0" : $("flt-lyric").value || "0",
           minHarmonicScore: $("flt-harm").value || "0",
           maxResults: "300",
         });
+        if (!pairHarmonicOnly && $("flt-bridge")?.checked) params.set("requireBridge", "1");
+        if (pairHarmonicOnly) params.set("harmonicOnly", "1");
+        if (pairSeedSongId) params.set("seedSongId", pairSeedSongId);
         if ($("flt-camelot").value.trim()) params.set("camelot", $("flt-camelot").value.trim());
         if ($("flt-year-min").value) params.set("yearMin", $("flt-year-min").value);
         if ($("flt-year-max").value) params.set("yearMax", $("flt-year-max").value);
-        if ($("flt-bridge").checked) params.set("requireBridge", "1");
         $("pairs-table").innerHTML = "<p class='hint' style='padding:1rem'>Loading pairs…</p>";
-        const { pairs, mode } = await api(`/api/projects/${currentProjectId}/pairs?${params}`);
-        pairsCache = pairs;
-        pairsLoadedFor = currentProjectId;
-        if (!pairs.length) {
-          $("pairs-table").innerHTML = "<p class='hint' style='padding:1rem'>No pairs match these filters (need BPM + Camelot; try widening BPM or lowering min lyric). Mode: " + esc(mode) + "</p>";
-          return;
+        updatePairsSeedBanner();
+        try {
+          const data = await api(`/api/projects/${currentProjectId}/pairs?${params}`);
+          pairsCache = data.pairs || [];
+          pairsLoadedFor = currentProjectId;
+          if (data.seed) {
+            pairSeedMeta = {
+              artist: data.seed.artist,
+              title: data.seed.title,
+              spotifyId: data.seed.spotifyId,
+            };
+          }
+          pairHarmonicOnly = Boolean(data.harmonicOnly);
+          if (!pairsCache.length) {
+            $("pairs-table").innerHTML = pairSeedSongId
+              ? "<p class='hint' style='padding:1rem'>No BPM/key matches (need tempo + Camelot; try widening BPM ±).</p>"
+              : "<p class='hint' style='padding:1rem'>No pairs match these filters (need BPM + Camelot; try widening BPM or lowering min lyric). Mode: " +
+                esc(data.mode) +
+                "</p>";
+            updatePairsSeedBanner();
+            return;
+          }
+          if (pairHarmonicOnly && pairSort.key === "lyric_score") {
+            pairSort = { key: "harmonic_score", dir: -1 };
+          }
+          renderPairs();
+        } catch (e) {
+          $("pairs-table").innerHTML =
+            `<p class='hint' style='padding:1rem'>Error: ${esc(e.message || e)}</p>`;
         }
-        renderPairs();
       }
 
-      $("btn-load-pairs").onclick = () => loadPairs();
+      async function findPairsForSong(songId) {
+        if (viewMode !== "project" || !currentProjectId || !songId) return;
+        const song = songsCache.find((s) => s.id === songId);
+        if (!song) return;
+        if (!effectiveTempo(song) || !effectiveCamelot(song)) {
+          setPlayStatus("That song needs BPM and Camelot key before pairs can be found.");
+          return;
+        }
+        pairSeedSongId = songId;
+        pairSeedMeta = {
+          artist: song.artist,
+          title: song.title,
+          spotifyId: song.spotify_id_resolved,
+        };
+        pairHarmonicOnly = true;
+        pairSort = { key: "harmonic_score", dir: -1 };
+        pairsLoadedFor = null;
+        pairsCache = [];
+        setContentTab("pairs");
+      }
+
+      function clearPairSeed() {
+        pairSeedSongId = null;
+        pairSeedMeta = null;
+        pairHarmonicOnly = false;
+        pairsLoadedFor = null;
+        updatePairsSeedBanner();
+        void loadPairs();
+      }
+
+      $("btn-load-pairs").onclick = () => {
+        void loadPairs();
+      };
+      $("btn-clear-pair-seed").onclick = () => clearPairSeed();
+
+      function syncAutomixDefaults() {
+        const eligible = songsCache.filter((s) => effectiveTempo(s) && effectiveCamelot(s)).length;
+        const input = $("am-max-tracks");
+        if (!input) return;
+        const suggested = Math.max(2, eligible || 2);
+        input.max = String(Math.max(2, eligible || 2));
+        if (automixLoadedFor !== currentProjectId) {
+          input.value = String(suggested);
+        } else {
+          const cur = Number(input.value);
+          if (!Number.isFinite(cur) || cur < 2) input.value = String(suggested);
+          if (cur > suggested) input.value = String(suggested);
+        }
+        const weight = Number($("am-key-weight").value) || 55;
+        $("am-key-weight-label").textContent = `${weight}%`;
+      }
+
+      function renderAutomix() {
+        const el = $("automix-table");
+        const summary = $("automix-summary");
+        const spotifyBtn = $("btn-automix-spotify");
+        if (!automixCache || !automixCache.tracks?.length) {
+          el.innerHTML = "";
+          spotifyBtn.hidden = true;
+          return;
+        }
+        const data = automixCache;
+        const pct = Math.round((data.averageScore || 0) * 100);
+        summary.innerHTML = `Mix of <strong>${data.tracks.length}</strong> tracks · avg transition <strong>${pct}%</strong> · <strong>${data.greatTransitions}</strong> great · skipped missing BPM/key: ${data.skippedMissingMeta} · ${esc(data.algorithm)}${
+          data.spotify?.url
+            ? ` · <a href="${esc(data.spotify.url)}" target="_blank" rel="noopener">Open Spotify playlist</a>`
+            : ""
+        }`;
+        spotifyBtn.hidden = false;
+
+        const rows = data.tracks
+          .map((t, i) => {
+            const tr = data.transitions?.[i];
+            const bpm = Math.round(Number(t.bpm) || 0) || "—";
+            const transHtml = tr
+              ? `<div class="am-trans"><span class="am-quality ${esc(tr.quality)}">${esc(tr.quality)}</span> ΔBPM ${Math.round(tr.bpmDelta)} · key ${esc(tr.keyRelationship.replace(/_/g, " "))} · ${Math.round(tr.score * 100)}%</div>`
+              : "";
+            return `<tr data-spotify="${esc(t.spotifyId)}">
+              <td class="num-pos">${i + 1}</td>
+              <td class="play-cell"><button type="button" class="play" data-play="${esc(t.spotifyId)}" title="Play">▶</button></td>
+              <td class="artist">${esc(t.artist)}</td>
+              <td class="title">${esc(t.title)}</td>
+              <td class="num">${esc(bpm)}</td>
+              <td class="key">${keyBadge(t.camelot)}</td>
+            </tr>${
+              tr
+                ? `<tr class="am-trans-row"><td colspan="6">${transHtml}</td></tr>`
+                : ""
+            }`;
+          })
+          .join("");
+
+        el.innerHTML = `<table class="mik am-table"><thead><tr>
+          <th>#</th><th></th><th>Artist</th><th>Title</th><th class="num">BPM</th><th class="key">Key</th>
+        </tr></thead><tbody>${rows}</tbody></table>`;
+        el.querySelectorAll("[data-play]").forEach((btn) => {
+          btn.onclick = () => playTrack(btn.getAttribute("data-play"), 0);
+        });
+        if (nowPlayingId) setPlayingUi(nowPlayingId, playMode);
+      }
+
+      async function runAutomix(createSpotify = false) {
+        if (viewMode !== "project" || !currentProjectId) return;
+        syncAutomixDefaults();
+        const maxTracks = Math.max(2, Number($("am-max-tracks").value) || 2);
+        const keyWeight = Math.min(1, Math.max(0, (Number($("am-key-weight").value) || 55) / 100));
+        const bpmTolerance = Math.max(4, Number($("am-bpm").value) || 12);
+        const mode = $("am-mode").value === "fuzzy" ? "fuzzy" : "mood";
+        $("automix-summary").textContent = createSpotify
+          ? "Creating Spotify playlist…"
+          : "Generating mix order…";
+        $("automix-table").innerHTML = "<p class='hint' style='padding:1rem'>Working…</p>";
+        try {
+          const data = await api(`/api/projects/${currentProjectId}/automix`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              maxTracks,
+              keyWeight,
+              bpmTolerance,
+              mode,
+              createSpotify: Boolean(createSpotify),
+            }),
+          });
+          automixCache = data;
+          automixLoadedFor = currentProjectId;
+          if (!data.tracks?.length) {
+            $("automix-summary").textContent =
+              data.eligibleCount < 2
+                ? `Need at least 2 songs with BPM and Camelot (have ${data.eligibleCount}; ${data.skippedMissingMeta} missing meta).`
+                : "No mix generated.";
+            $("automix-table").innerHTML = "";
+            $("btn-automix-spotify").hidden = true;
+            return;
+          }
+          renderAutomix();
+        } catch (e) {
+          $("automix-summary").textContent = "Error: " + (e.message || e);
+          $("automix-table").innerHTML = "";
+          $("btn-automix-spotify").hidden = true;
+        }
+      }
+
+      $("am-key-weight").oninput = () => {
+        $("am-key-weight-label").textContent = `${$("am-key-weight").value}%`;
+      };
+      $("btn-run-automix").onclick = () => void runAutomix(false);
+      $("btn-automix-spotify").onclick = () => void runAutomix(true);
+
+
 
       $("btn-lyric-search").onclick = async () => {
         const q = $("lyric-q").value.trim();

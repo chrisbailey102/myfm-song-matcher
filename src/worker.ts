@@ -25,10 +25,11 @@ import {
   type PairFilters,
   type LyricBundle,
 } from "./pairs.js";
-import { enrichedForPairing } from "./songEffective.js";
+import { enrichedForPairing, effectiveTempo, effectiveCamelot } from "./songEffective.js";
 import { ensureUserAccessToken } from "./spotifyAuth.js";
 import { fetchPlaylistTracks, fetchPlaylistMeta } from "./spotifyPlaylist.js";
 import { fetchBestLyrics } from "./lyrics.js";
+import { buildAutomix, type AutomixOptions } from "./automix.js";
 import type { EnrichedSong } from "./types.js";
 
 let running = false;
@@ -173,6 +174,11 @@ async function loadLyricBundles(
 export type ProjectPairsQuery = {
   mode?: "playlist" | "expand";
   filters?: PairFilters;
+  /** Limit pairs to those involving this project song id (or Spotify id). */
+  seedSongId?: string;
+  seedSpotifyId?: string;
+  /** BPM + Camelot only — skip lyric scoring. */
+  harmonicOnly?: boolean;
 };
 
 /** Pairs for a project (uses overrides + cached lyrics). */
@@ -182,10 +188,35 @@ export async function getProjectPairs(
 ) {
   const mode = query.mode ?? "playlist";
   const projectSongs = await listSongsForProject(projectId);
-  const seeds = enrichedForPairing(projectSongs.map(dbSongToEnriched));
+  let seeds = enrichedForPairing(projectSongs.map(dbSongToEnriched));
+
+  const seedKey = (query.seedSongId || query.seedSpotifyId || "").trim();
+  let seedLabel: { artist: string; title: string; spotifyId: string } | null =
+    null;
+  if (seedKey) {
+    const raw = projectSongs.find(
+      (s) =>
+        s.id === seedKey ||
+        s.spotify_id_resolved === seedKey ||
+        `lib:${s.spotify_id_resolved}` === seedKey,
+    );
+    if (!raw) {
+      throw new Error("Seed song not found in this playlist");
+    }
+    const enriched = enrichedForPairing([dbSongToEnriched(raw)]);
+    if (!enriched.length) {
+      throw new Error("Seed song needs BPM and Camelot key to find pairs");
+    }
+    seeds = enriched;
+    seedLabel = {
+      artist: enriched[0].artist,
+      title: enriched[0].title,
+      spotifyId: enriched[0].spotify_id_resolved,
+    };
+  }
 
   let pool = seeds;
-  let directed = false;
+  let directed = Boolean(seedKey);
   if (mode === "expand") {
     const lib = await listLibraryTracks();
     const seedIds = new Set(seeds.map((s) => s.spotify_id_resolved));
@@ -195,18 +226,62 @@ export async function getProjectPairs(
         .map(libraryToEnriched),
     );
     directed = true;
+  } else if (seedKey) {
+    // Pair seed against the rest of this playlist
+    pool = enrichedForPairing(projectSongs.map(dbSongToEnriched));
+    directed = true;
   }
 
-  const allForLyrics = [...seeds, ...pool];
-  const lyricsById = await loadLyricBundles(allForLyrics);
-  const withLyrics = lyricsById.size > 0;
+  const filters: PairFilters = { ...(query.filters || {}) };
+  let lyricsById: Map<string, LyricBundle> | undefined;
+  let withLyrics = false;
+  if (query.harmonicOnly) {
+    filters.minLyricScore = 0;
+    filters.requireBridge = false;
+    withLyrics = false;
+  } else {
+    const allForLyrics = [...seeds, ...pool];
+    lyricsById = await loadLyricBundles(allForLyrics);
+    withLyrics = lyricsById.size > 0;
+  }
 
-  return generatePairCandidates({
+  const pairs = generatePairCandidates({
     seeds,
     pool,
     lyricsById,
     withLyrics,
     directed,
-    filters: query.filters,
+    filters,
   });
+
+  return { pairs, seed: seedLabel, harmonicOnly: Boolean(query.harmonicOnly) };
 }
+
+/** Order playlist songs for DJ-style harmonic mix (BPM + Camelot only). */
+export async function getProjectAutomix(
+  projectId: string,
+  options: AutomixOptions = {},
+) {
+  const projectSongs = await listSongsForProject(projectId);
+  const candidates = [];
+  let skippedMissingMeta = 0;
+  for (const s of projectSongs) {
+    const bpm = effectiveTempo(s);
+    const camelot = effectiveCamelot(s);
+    if (!bpm || !camelot) {
+      skippedMissingMeta++;
+      continue;
+    }
+    candidates.push({
+      id: s.id,
+      artist: s.artist,
+      title: s.title,
+      spotifyId: s.spotify_id_resolved,
+      bpm,
+      camelot,
+      energy: s.energy ?? 0,
+    });
+  }
+  return buildAutomix(candidates, skippedMissingMeta, options);
+}
+

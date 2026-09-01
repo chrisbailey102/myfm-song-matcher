@@ -46,6 +46,8 @@ import {
   fetchPlaylistMeta,
   fetchUserPlaylists,
   parsePlaylistId,
+  createUserPlaylist,
+  addTracksToPlaylist,
 } from "./spotifyPlaylist.js";
 import { createPlaylistFromArtistTitleText } from "./playlistFromText.js";
 import {
@@ -58,7 +60,7 @@ import {
 } from "./spotifyPlayback.js";
 import { searchProjectLyrics } from "./db/lyricsCache.js";
 import { resetCatalogData } from "./db/reset.js";
-import { getProjectPairs } from "./worker.js";
+import { getProjectPairs, getProjectAutomix } from "./worker.js";
 import type { DbUser } from "./db/users.js";
 
 const oauthStates = new Map<string, number>();
@@ -718,10 +720,78 @@ export function registerRoutes(app: Express): void {
         yearMax: num(req.query.yearMax),
         maxResults: num(req.query.maxResults) ?? 300,
       };
-      const pairs = await getProjectPairs(project.id, { mode, filters });
-      res.json({ pairs, count: pairs.length, mode, filters });
+      const seedSongId =
+        typeof req.query.seedSongId === "string" ? req.query.seedSongId.trim() : "";
+      const seedSpotifyId =
+        typeof req.query.seedSpotifyId === "string"
+          ? req.query.seedSpotifyId.trim()
+          : "";
+      const harmonicOnly =
+        req.query.harmonicOnly === "1" || req.query.harmonicOnly === "true";
+      const result = await getProjectPairs(project.id, {
+        mode,
+        filters,
+        seedSongId: seedSongId || undefined,
+        seedSpotifyId: seedSpotifyId || undefined,
+        harmonicOnly,
+      });
+      res.json({
+        pairs: result.pairs,
+        count: result.pairs.length,
+        mode,
+        filters,
+        seed: result.seed,
+        harmonicOnly: result.harmonicOnly,
+      });
     } catch (e) {
       res.status(500).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  app.post("/api/projects/:id/automix", requireAuth, async (req, res) => {
+    try {
+      const project = await getProjectById(req.params.id);
+      if (!project || project.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      const body = (req.body || {}) as {
+        maxTracks?: number;
+        keyWeight?: number;
+        bpmTolerance?: number;
+        mode?: "mood" | "fuzzy";
+        createSpotify?: boolean;
+        playlistName?: string;
+      };
+      const result = await getProjectAutomix(project.id, {
+        maxTracks: body.maxTracks,
+        keyWeight: body.keyWeight,
+        bpmTolerance: body.bpmTolerance,
+        mode: body.mode,
+      });
+
+      let spotify: { id: string; name: string; url: string; added: number } | null =
+        null;
+      if (body.createSpotify && result.tracks.length) {
+        const token = await ensureUserAccessToken(authed(req));
+        const name =
+          (typeof body.playlistName === "string" && body.playlistName.trim()) ||
+          `${project.name} — Auto-mix`;
+        const pl = await createUserPlaylist(token, {
+          name,
+          description: `Harmonic auto-mix (${result.options.mode}, key weight ${result.options.keyWeight.toFixed(2)}) from Song Matcher`,
+          isPublic: false,
+        });
+        const uris = result.tracks.map((t) => `spotify:track:${t.spotifyId}`);
+        const added = await addTracksToPlaylist(token, pl.id, uris);
+        spotify = { id: pl.id, name: pl.name, url: pl.url, added };
+      }
+
+      res.json({ ...result, spotify });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const status = /Reconnect Spotify|insufficient.?scope/i.test(msg) ? 403 : 500;
+      res.status(status).json({ error: msg });
     }
   });
 
