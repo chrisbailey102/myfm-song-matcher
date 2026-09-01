@@ -332,6 +332,17 @@
       table.mik tbody tr.selected {
         background: #e8f0fe;
       }
+      table.mik tbody tr.pair-seed {
+        background: #dce8ff;
+        box-shadow: inset 3px 0 0 var(--accent, #3b82f6);
+      }
+      table.mik tbody tr.pair-match {
+        background: #e4f7ea;
+        box-shadow: inset 3px 0 0 #2f9e5b;
+      }
+      table.mik tbody tr.pair-dim {
+        opacity: 0.38;
+      }
       table.mik tbody tr.dragging {
         opacity: 0.55;
       }
@@ -1413,7 +1424,7 @@
               <div class="track-head">
                 <input type="text" id="lyric-q" placeholder="Search lyrics…" style="width:min(280px,100%)" />
                 <button type="button" id="btn-lyric-search" class="secondary">Search</button>
-                <span class="hint" style="margin:0">Drag tracks onto a playlist to copy · right-click for BPM/key pairs or remove · double-click tempo/key · ▶ plays via Spotify Premium (lyric search jumps to the line)</span>
+                <span class="hint" style="margin:0">Drag tracks onto a playlist to copy · double-click a song to highlight BPM/key matches · right-click for Pairs or remove · double-click tempo/key to edit · ▶ plays via Spotify Premium</span>
               </div>
               <div id="lyric-results" class="hint"></div>
               <div class="mik-wrap" id="songs-table"></div>
@@ -1560,6 +1571,8 @@
       let backfillPollTimer = null;
       let selectedSongId = null;
       let ctxTrackId = null;
+      /** When set, Tracks table highlights this song + BPM/key-compatible playlist mates. */
+      let pairHighlightSeedId = null;
 
       /** Mixed In Key Camelot wheel hues (12 at top, clockwise). Outer B = saturated, inner A = pastel. */
       const CAMELOT_B = {
@@ -2250,6 +2263,78 @@
 
       function effectiveCamelot(s) {
         return (s.camelot_override || s.camelot || "").toString();
+      }
+
+      function parseCamelotCode(code) {
+        const m = /^(\d{1,2})([AB])$/i.exec(String(code || "").trim());
+        if (!m) return null;
+        const num = Number(m[1]);
+        const letter = m[2].toUpperCase();
+        if (num < 1 || num > 12) return null;
+        return { num, letter };
+      }
+
+      function camelotNumDistance(a, b) {
+        const d = Math.abs(a - b);
+        return Math.min(d, 12 - d);
+      }
+
+      /** Mixed In Key-style: same, relative A/B, or ±1 same letter. */
+      function isMikCompatible(a, b) {
+        const pa = parseCamelotCode(a);
+        const pb = parseCamelotCode(b);
+        if (!pa || !pb) return false;
+        if (pa.num === pb.num && pa.letter === pb.letter) return true;
+        if (pa.num === pb.num && pa.letter !== pb.letter) return true;
+        if (pa.letter === pb.letter && camelotNumDistance(pa.num, pb.num) === 1) return true;
+        return false;
+      }
+
+      function pairHighlightBpmTol() {
+        const n = Number($("flt-bpm")?.value);
+        return Number.isFinite(n) && n > 0 ? n : 10;
+      }
+
+      function songsMatchBpmKey(a, b, bpmTol = pairHighlightBpmTol()) {
+        const ta = effectiveTempo(a);
+        const tb = effectiveTempo(b);
+        const ca = effectiveCamelot(a);
+        const cb = effectiveCamelot(b);
+        if (!ta || !tb || !ca || !cb) return false;
+        if (Math.abs(ta - tb) > bpmTol) return false;
+        return isMikCompatible(ca, cb);
+      }
+
+      function clearPairHighlight() {
+        if (!pairHighlightSeedId) return;
+        pairHighlightSeedId = null;
+        renderSongs();
+      }
+
+      function togglePairHighlight(songId) {
+        if (viewMode !== "project" || !songId) return;
+        if (pairHighlightSeedId === songId) {
+          pairHighlightSeedId = null;
+          renderSongs();
+          return;
+        }
+        const song = songsCache.find((s) => s.id === songId);
+        if (!song) return;
+        if (!effectiveTempo(song) || !effectiveCamelot(song)) {
+          setPlayStatus("That song needs BPM and Camelot key before matches can be highlighted.");
+          return;
+        }
+        pairHighlightSeedId = songId;
+        selectedSongId = songId;
+        renderSongs();
+        const matches = songsCache.filter(
+          (s) => s.id !== songId && songsMatchBpmKey(song, s),
+        ).length;
+        setPlayStatus(
+          matches
+            ? `Highlighted ${matches} BPM/key match${matches === 1 ? "" : "es"} for ${song.artist} — ${song.title} (Esc or double-click again to clear)`
+            : `No BPM/key matches in this playlist for ${song.artist} — ${song.title} (Esc to clear)`,
+        );
       }
 
       async function api(path, opts = {}) {
@@ -3162,6 +3247,10 @@
           hidePlaylistCtx();
           hideFolderCtx();
           hideTrackCtx();
+          if (pairHighlightSeedId) {
+            clearPairHighlight();
+            setPlayStatus("");
+          }
         }
         const tag = (ev.target && ev.target.tagName) || "";
         if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || ev.target?.isContentEditable) {
@@ -3450,6 +3539,7 @@
         pairSeedSongId = null;
         pairSeedMeta = null;
         pairHarmonicOnly = false;
+        pairHighlightSeedId = null;
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = null;
         $("empty-state").hidden = true;
@@ -3493,6 +3583,7 @@
         pairSeedSongId = null;
         pairSeedMeta = null;
         pairHarmonicOnly = false;
+        pairHighlightSeedId = null;
         automixCache = null;
         automixLoadedFor = null;
         $("empty-state").hidden = true;
@@ -3672,6 +3763,9 @@
           },
         };
         const sorted = sortBy(filtered, songSort.key, songSort.dir, getters[songSort.key]);
+        const highlightSeed = pairHighlightSeedId
+          ? songsCache.find((s) => s.id === pairHighlightSeedId)
+          : null;
         const thead = `<tr>
           <th></th>
           <th data-sort="artist">Artist</th>
@@ -3691,7 +3785,16 @@
               viewMode === "project"
                 ? `<button type="button" class="secondary" data-find-pairs="${esc(s.id)}" title="Find BPM/key pairs in this playlist" style="font-size:0.75rem;padding:0.25rem 0.55rem">Pairs</button>`
                 : "";
-            return `<tr data-id="${esc(s.id)}" data-spotify="${esc(s.spotify_id_resolved)}" draggable="true" class="${selectedSongId === s.id ? "selected" : ""}">
+            const rowClass = [];
+            if (selectedSongId === s.id && !highlightSeed) rowClass.push("selected");
+            if (highlightSeed) {
+              if (s.id === highlightSeed.id) rowClass.push("pair-seed");
+              else if (songsMatchBpmKey(highlightSeed, s)) rowClass.push("pair-match");
+              else rowClass.push("pair-dim");
+            }
+            return `<tr data-id="${esc(s.id)}" data-spotify="${esc(s.spotify_id_resolved)}" draggable="true" class="${rowClass.join(" ")}" title="${
+              viewMode === "project" ? "Double-click to highlight BPM/key matches" : ""
+            }">
             <td class="play-cell"><button type="button" class="play" data-play="${esc(s.spotify_id_resolved)}" title="Play">▶</button></td>
             <td class="artist${unknownArtist ? " unknown" : ""}">${esc(s.artist || "Unknown")}</td>
             <td class="title">${esc(s.title)}</td>
@@ -3722,15 +3825,26 @@
           tr.addEventListener("click", (ev) => {
             if (ev.target.closest("button") || ev.target.closest("input")) return;
             selectedSongId = songId;
-            el.querySelectorAll("tbody tr").forEach((r) => r.classList.remove("selected"));
-            tr.classList.add("selected");
+            if (!pairHighlightSeedId) {
+              el.querySelectorAll("tbody tr").forEach((r) => r.classList.remove("selected"));
+              tr.classList.add("selected");
+            }
+          });
+          tr.addEventListener("dblclick", (ev) => {
+            if (ev.target.closest("button") || ev.target.closest("input")) return;
+            if (ev.target.closest("td.editable")) return;
+            if (viewMode !== "project") return;
+            ev.preventDefault();
+            togglePairHighlight(songId);
           });
           tr.addEventListener("contextmenu", (ev) => showTrackCtx(ev, songId));
           tr.addEventListener("dragstart", (ev) => {
             tr.classList.add("dragging");
             selectedSongId = songId;
-            el.querySelectorAll("tbody tr").forEach((r) => r.classList.remove("selected"));
-            tr.classList.add("selected");
+            if (!pairHighlightSeedId) {
+              el.querySelectorAll("tbody tr").forEach((r) => r.classList.remove("selected"));
+              tr.classList.add("selected");
+            }
             const payload = JSON.stringify({
               songId,
               spotifyId,
@@ -3744,7 +3858,10 @@
         });
         el.querySelectorAll("td.editable").forEach((td) => {
           if (!allowInlineEdit) return;
-          td.ondblclick = () => beginInlineEdit(td);
+          td.ondblclick = (ev) => {
+            ev.stopPropagation();
+            beginInlineEdit(td);
+          };
         });
         if (nowPlayingId) setPlayingUi(nowPlayingId, playMode);
       }
