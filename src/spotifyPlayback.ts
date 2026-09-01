@@ -71,6 +71,48 @@ export async function pauseSpotifyPlayback(accessToken: string): Promise<void> {
   throw new Error(`Spotify pause failed: ${res.status} ${body}`);
 }
 
+/** Seek the active Spotify player (Premium). */
+export async function seekSpotifyPlayback(
+  accessToken: string,
+  positionMs: number,
+  deviceId?: string,
+): Promise<void> {
+  const ms = Math.max(0, Math.floor(positionMs));
+  const q = new URLSearchParams({ position_ms: String(ms) });
+  if (deviceId) q.set("device_id", deviceId);
+  const res = await fetch(`https://api.spotify.com/v1/me/player/seek?${q}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.status === 204 || res.status === 202 || res.status === 200) return;
+  const body = await res.text();
+  if (res.status === 404) {
+    throw new Error("No active Spotify player to seek.");
+  }
+  throw new Error(`Spotify seek failed: ${res.status} ${body}`);
+}
+
+/** Set volume on the active Spotify player (0–100). */
+export async function setSpotifyVolume(
+  accessToken: string,
+  volumePercent: number,
+  deviceId?: string,
+): Promise<void> {
+  const vol = Math.max(0, Math.min(100, Math.round(volumePercent)));
+  const q = new URLSearchParams({ volume_percent: String(vol) });
+  if (deviceId) q.set("device_id", deviceId);
+  const res = await fetch(`https://api.spotify.com/v1/me/player/volume?${q}`, {
+    method: "PUT",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (res.status === 204 || res.status === 202 || res.status === 200) return;
+  const body = await res.text();
+  if (res.status === 404) {
+    throw new Error("No active Spotify player for volume.");
+  }
+  throw new Error(`Spotify volume failed: ${res.status} ${body}`);
+}
+
 /** 30s preview MP3 when Spotify still provides one (often null nowadays). */
 export async function fetchTrackPreviewUrl(
   accessToken: string,

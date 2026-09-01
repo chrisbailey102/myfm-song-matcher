@@ -63,9 +63,23 @@
         white-space: nowrap;
       }
       #auth-status { font-size: 0.95rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 14rem; }
+      .app-top-right {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        flex-shrink: 0;
+      }
+      .topbar-settings {
+        margin: 0;
+        padding: 0.4rem 0.85rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
       .user-menu {
         position: relative;
-        margin-left: auto;
         flex-shrink: 0;
       }
       .user-menu-btn {
@@ -722,7 +736,43 @@
       .play-bar-actions {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
+        flex-wrap: wrap;
+        gap: 0.5rem 0.75rem;
+      }
+      .play-transport {
+        display: grid;
+        grid-template-columns: 3.2rem 1fr 3.2rem;
+        gap: 0.45rem;
+        align-items: center;
+        width: 100%;
+      }
+      .play-transport input[type="range"] {
+        width: 100%;
+        margin: 0;
+        accent-color: var(--play);
+        cursor: pointer;
+      }
+      .play-time {
+        font-size: 0.8rem;
+        font-variant-numeric: tabular-nums;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .play-time.dur { text-align: right; }
+      .play-vol {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        margin: 0;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--muted);
+      }
+      .play-vol input[type="range"] {
+        width: 6.5rem;
+        margin: 0;
+        accent-color: var(--ink);
+        cursor: pointer;
       }
       #spotify-embed-host {
         width: 100%;
@@ -1143,20 +1193,23 @@
     <div class="app-top">
       <h1>Song Matcher</h1>
       <span id="auth-status" class="hint" style="margin:0" hidden></span>
-      <div class="user-menu" id="user-menu">
-        <button type="button" class="user-menu-btn" id="user-menu-btn" aria-haspopup="true" aria-expanded="false" aria-controls="user-menu-dropdown">
-          <span class="user-menu-avatar" id="user-menu-avatar">?</span>
-          <span class="user-menu-name" id="user-menu-name">Account</span>
-          <span class="user-menu-caret" aria-hidden="true">▼</span>
-        </button>
-        <div class="user-menu-dropdown" id="user-menu-dropdown" role="menu" hidden>
-          <a href="https://dashboard.onthesly.com/#/" role="menuitem">Dashboard</a>
-          <hr />
-          <button type="button" id="btn-login" role="menuitem" hidden>Connect Spotify</button>
-          <button type="button" id="btn-reauth" role="menuitem" hidden title="Re-authorize Spotify playlist access">Reconnect Spotify</button>
-          <button type="button" id="btn-logout" role="menuitem" hidden>Log out Spotify</button>
-          <hr id="user-menu-spotify-sep" hidden />
-          <button type="button" id="btn-team-logout" role="menuitem" title="Sign out of On The Sly (all tools)">Log out</button>
+      <div class="app-top-right">
+        <button type="button" class="secondary topbar-settings" id="btn-open-settings">Settings</button>
+        <div class="user-menu" id="user-menu">
+          <button type="button" class="user-menu-btn" id="user-menu-btn" aria-haspopup="true" aria-expanded="false" aria-controls="user-menu-dropdown">
+            <span class="user-menu-avatar" id="user-menu-avatar">?</span>
+            <span class="user-menu-name" id="user-menu-name">Account</span>
+            <span class="user-menu-caret" aria-hidden="true">▼</span>
+          </button>
+          <div class="user-menu-dropdown" id="user-menu-dropdown" role="menu" hidden>
+            <a href="https://dashboard.onthesly.com/#/" role="menuitem">Dashboard</a>
+            <hr />
+            <button type="button" id="btn-login" role="menuitem" hidden>Connect Spotify</button>
+            <button type="button" id="btn-reauth" role="menuitem" hidden title="Re-authorize Spotify playlist access">Reconnect Spotify</button>
+            <button type="button" id="btn-logout" role="menuitem" hidden>Log out Spotify</button>
+            <hr id="user-menu-spotify-sep" hidden />
+            <button type="button" id="btn-team-logout" role="menuitem" title="Sign out of On The Sly (all tools)">Log out</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1189,9 +1242,6 @@
               <span class="pl-name">Entire Library</span>
               <span class="pl-count" id="library-count">0</span>
             </button>
-          </div>
-          <div class="sidebar-foot">
-            <button type="button" class="secondary" id="btn-open-settings" style="width:100%;font-size:0.85rem">Settings</button>
           </div>
         </aside>
 
@@ -1312,10 +1362,19 @@
               <div id="spotify-embed-host">
                 <div id="spotify-embed"></div>
               </div>
+              <div class="play-transport" id="play-transport">
+                <span class="play-time" id="play-time-cur">0:00</span>
+                <input type="range" id="play-seek" min="0" max="0" value="0" step="1000" aria-label="Seek" />
+                <span class="play-time dur" id="play-time-dur">0:00</span>
+              </div>
               <div class="play-bar-actions">
                 <button type="button" id="btn-stop-play" class="secondary">Pause</button>
+                <label class="play-vol" title="Volume">
+                  <span>Vol</span>
+                  <input type="range" id="play-volume" min="0" max="100" value="85" step="1" aria-label="Volume" />
+                </label>
                 <a id="open-at-spotify" class="hint" href="#" target="_blank" rel="noopener" hidden style="margin:0;font-weight:600;color:var(--accent);text-decoration:none"></a>
-                <span class="hint" id="play-bar-hint" style="margin:0">Premium playback — lyric ▶ jumps to the line. Safari may need two clicks the first time (autoplay rules). Chrome usually works on the first ▶.</span>
+                <span class="hint" id="play-bar-hint" style="margin:0">Premium playback — drag the timeline to scrub. Safari may need two ▶ clicks the first time.</span>
               </div>
             </div>
             <audio id="preview-audio" preload="none" hidden></audio>
@@ -1420,6 +1479,17 @@
       let webPlayerReadyPromise = null;
       /** True if Player was constructed outside a click — Safari often blocks audio then. */
       let webPlayerCreatedOutsideGesture = false;
+      let playPositionMs = 0;
+      let playDurationMs = 0;
+      let seekDragging = false;
+      let playPollTimer = null;
+      let playVolume = (() => {
+        try {
+          const v = Number(localStorage.getItem("sm-volume"));
+          if (Number.isFinite(v) && v >= 0 && v <= 100) return Math.round(v);
+        } catch (_) { /* ignore */ }
+        return 85;
+      })();
       let allowInlineEdit = true;
       let keyFilters = new Set(); // Camelot codes e.g. "8B"; empty = all
       let awaitImportSuccessFor = null; // project id — show one-shot success when enrich finishes
@@ -1694,6 +1764,52 @@
         $("play-status").textContent = msg || "";
       }
 
+      function formatPlayClock(ms) {
+        const s = Math.max(0, Math.floor(Number(ms) / 1000) || 0);
+        return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+      }
+
+      function updatePlayTransport(positionMs, durationMs) {
+        if (seekDragging) return;
+        playPositionMs = Math.max(0, Number(positionMs) || 0);
+        if (durationMs != null && Number(durationMs) > 0) {
+          playDurationMs = Number(durationMs);
+        }
+        const seek = $("play-seek");
+        const cur = $("play-time-cur");
+        const dur = $("play-time-dur");
+        if (cur) cur.textContent = formatPlayClock(playPositionMs);
+        if (dur) dur.textContent = formatPlayClock(playDurationMs);
+        if (seek) {
+          seek.max = String(Math.max(0, Math.floor(playDurationMs)));
+          seek.value = String(Math.min(playPositionMs, playDurationMs || playPositionMs));
+        }
+      }
+
+      function resetPlayTransport() {
+        playPositionMs = 0;
+        playDurationMs = 0;
+        updatePlayTransport(0, 0);
+      }
+
+      function startPlayPolling() {
+        stopPlayPolling();
+        playPollTimer = setInterval(() => {
+          if (!webPlayer || seekDragging) return;
+          void webPlayer.getCurrentState?.().then((state) => {
+            if (!state) return;
+            updatePlayTransport(state.position, state.duration);
+          }).catch(() => {});
+        }, 500);
+      }
+
+      function stopPlayPolling() {
+        if (playPollTimer) {
+          clearInterval(playPollTimer);
+          playPollTimer = null;
+        }
+      }
+
       function setPlayingUi(spotifyId, mode) {
         nowPlayingId = spotifyId || null;
         playMode = mode || null;
@@ -1702,6 +1818,8 @@
           $("play-bar").hidden = false;
         } else {
           $("play-bar").hidden = true;
+          stopPlayPolling();
+          resetPlayTransport();
         }
         // Always show the Embed card for artwork/controls (audio may be Web Playback).
         const host = $("spotify-embed-host");
@@ -1713,6 +1831,61 @@
           btn.textContent = on ? "■" : "▶";
           btn.title = on ? "Pause" : "Play (Premium — jumps to lyric time when available)";
         });
+        if (nowPlayingId && (mode === "web" || mode === "device")) {
+          startPlayPolling();
+        }
+      }
+
+      async function seekPlayback(positionMs) {
+        const ms = Math.max(0, Math.floor(Number(positionMs) || 0));
+        playPositionMs = ms;
+        updatePlayTransport(ms, playDurationMs);
+        if (nowPlayingId) setOpenAtLink(nowPlayingId, ms);
+        try {
+          if (webPlayer && (playMode === "web" || playMode === "device")) {
+            await webPlayer.seek(ms);
+            return;
+          }
+          await api("/api/spotify/seek", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              positionMs: ms,
+              deviceId: webDeviceId || undefined,
+            }),
+          });
+        } catch (e) {
+          // Embed fallback: restart at seek position via full play
+          if (nowPlayingId) {
+            try {
+              await playTrack(nowPlayingId, ms);
+            } catch (_) {
+              setPlayStatus("Seek failed: " + (e instanceof Error ? e.message : e));
+            }
+          }
+        }
+      }
+
+      async function applyVolume(percent) {
+        const vol = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+        playVolume = vol;
+        try {
+          localStorage.setItem("sm-volume", String(vol));
+        } catch (_) { /* ignore */ }
+        try {
+          if (webPlayer) {
+            await webPlayer.setVolume(vol / 100);
+            return;
+          }
+          await api("/api/spotify/volume", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              volumePercent: vol,
+              deviceId: webDeviceId || undefined,
+            }),
+          });
+        } catch (_) { /* volume best-effort */ }
       }
 
       /** Load track into Embed for display only — do not start Embed audio (avoids double play). */
@@ -1751,6 +1924,8 @@
         }
         setOpenAtLink(null, 0);
         setPlayingUi(null, null);
+        stopPlayPolling();
+        resetPlayTransport();
         setPlayStatus("Paused.");
       }
 
@@ -1821,7 +1996,7 @@
                 cb("");
               });
           },
-          volume: 0.85,
+          volume: playVolume / 100,
         });
 
         webPlayerReadyPromise = new Promise((resolve, reject) => {
@@ -1831,10 +2006,20 @@
           player.addListener("ready", ({ device_id }) => {
             window.clearTimeout(t);
             webDeviceId = device_id;
+            void player.setVolume(playVolume / 100).catch(() => {});
             resolve(device_id);
           });
           player.addListener("not_ready", () => {
             webDeviceId = null;
+          });
+          player.addListener("player_state_changed", (state) => {
+            if (!state) return;
+            updatePlayTransport(state.position, state.duration);
+            const uri = state.track_window?.current_track?.uri || "";
+            const id = String(uri).replace(/^spotify:track:/, "");
+            if (id && !state.paused) {
+              nowPlayingId = id;
+            }
           });
           player.addListener("autoplay_failed", () => {
             setPlayStatus(
@@ -2106,8 +2291,10 @@
             // Safari often starts transferred playback paused — resume in this click chain.
             try { await webPlayer?.activateElement?.(); } catch (_) { /* ignore */ }
             try { await webPlayer?.resume?.(); } catch (_) { /* ignore */ }
+            try { await webPlayer?.setVolume?.(playVolume / 100); } catch (_) { /* ignore */ }
             setPlayingUi(spotifyId, result.mode === "web" ? "web" : "device");
             void syncEmbedVisual(spotifyId);
+            updatePlayTransport(ms, playDurationMs);
             setPlayStatus(
               ms > 0
                 ? `Playing from ${formatClockFromMs(ms)} (Premium).`
@@ -2155,6 +2342,36 @@
       }
 
       $("btn-stop-play").onclick = () => void stopPlayback();
+
+      (() => {
+        const seek = $("play-seek");
+        const vol = $("play-volume");
+        if (vol) {
+          vol.value = String(playVolume);
+          vol.addEventListener("input", () => {
+            void applyVolume(vol.value);
+          });
+        }
+        if (seek) {
+          seek.addEventListener("pointerdown", () => {
+            seekDragging = true;
+          });
+          seek.addEventListener("pointerup", () => {
+            seekDragging = false;
+            void seekPlayback(Number(seek.value) || 0);
+          });
+          seek.addEventListener("change", () => {
+            seekDragging = false;
+            void seekPlayback(Number(seek.value) || 0);
+          });
+          seek.addEventListener("input", () => {
+            const ms = Number(seek.value) || 0;
+            playPositionMs = ms;
+            const cur = $("play-time-cur");
+            if (cur) cur.textContent = formatPlayClock(ms);
+          });
+        }
+      })();
 
       // Preload SDK only — do NOT construct Player here (Safari blocks that as autoplay).
       void loadSpotifyWebPlaybackSdk().catch(() => {});

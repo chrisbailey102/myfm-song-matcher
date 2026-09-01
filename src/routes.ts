@@ -51,6 +51,8 @@ import { createPlaylistFromArtistTitleText } from "./playlistFromText.js";
 import {
   fetchTrackPreviewUrl,
   pauseSpotifyPlayback,
+  seekSpotifyPlayback,
+  setSpotifyVolume,
   spotifyOpenUrl,
   startSpotifyPlayback,
 } from "./spotifyPlayback.js";
@@ -221,6 +223,42 @@ export function registerRoutes(app: Express): void {
         ((e as Error & { code?: string }).code === "needs_reauth" ||
           /permissions missing|401/i.test(msg));
       res.status(400).json({ error: msg, needsReauth });
+    }
+  });
+
+  app.post("/api/spotify/seek", requireAuth, async (req, res) => {
+    try {
+      const { positionMs, deviceId } = req.body as {
+        positionMs?: number;
+        deviceId?: string;
+      };
+      const token = await ensureUserAccessToken(authed(req));
+      await seekSpotifyPlayback(
+        token,
+        Number(positionMs) || 0,
+        deviceId?.trim() || undefined,
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  app.post("/api/spotify/volume", requireAuth, async (req, res) => {
+    try {
+      const { volumePercent, deviceId } = req.body as {
+        volumePercent?: number;
+        deviceId?: string;
+      };
+      const token = await ensureUserAccessToken(authed(req));
+      await setSpotifyVolume(
+        token,
+        Number(volumePercent) || 0,
+        deviceId?.trim() || undefined,
+      );
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
     }
   });
 
