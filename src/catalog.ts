@@ -187,7 +187,8 @@ export async function enrichCatalog(
     const ids = lockedIdx.map((i) => rows[i].spotify_id!.trim());
     let byId: Map<string, SpotifyTrack>;
     try {
-      byId = await getTracksByIds(ids);
+      // Playlist rows already include title/artist/id — never N+1 fetch every track.
+      byId = await getTracksByIds(ids, { allowIndividualFallback: false });
     } catch (e) {
       console.warn("Batch Spotify track fetch failed; using playlist stubs:", e);
       byId = new Map();

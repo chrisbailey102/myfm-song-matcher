@@ -236,13 +236,15 @@ export async function getTrackById(trackId: string): Promise<SpotifyTrack> {
   );
 }
 
-/** Batch fetch tracks. Dev Mode removed GET /tracks?ids= — fall back to per-id. */
+/** Batch fetch tracks. Dev Mode removed GET /tracks?ids= — optional per-id fallback. */
 export async function getTracksByIds(
   trackIds: string[],
+  opts?: { allowIndividualFallback?: boolean },
 ): Promise<Map<string, SpotifyTrack>> {
   const out = new Map<string, SpotifyTrack>();
   const unique = [...new Set(trackIds.map((id) => id.trim()).filter(Boolean))];
   if (!unique.length) return out;
+  const allowIndividual = opts?.allowIndividualFallback !== false;
 
   const chunk = 50;
   let batchOk = true;
@@ -264,14 +266,17 @@ export async function getTracksByIds(
   } catch (e) {
     batchOk = false;
     console.warn(
-      "Batch GET /tracks unavailable (Dev Mode) — fetching tracks individually:",
+      "Batch GET /tracks unavailable (Dev Mode):",
       e instanceof Error ? e.message : e,
     );
   }
 
-  if (!batchOk || out.size < unique.length) {
+  // Per-id fallback can soft-lock imports for minutes on large playlists / 429s.
+  // Playlist imports already have ids + titles from /playlists/.../items — stubs are fine.
+  if (allowIndividual && (!batchOk || out.size < unique.length)) {
     const missing = unique.filter((id) => !out.has(id));
-    for (let i = 0; i < missing.length; i++) {
+    const maxIndividual = 25;
+    for (let i = 0; i < missing.length && i < maxIndividual; i++) {
       const id = missing[i];
       try {
         const t = await getTrackById(id);
@@ -279,7 +284,12 @@ export async function getTracksByIds(
       } catch (e) {
         console.warn(`Track ${id} fetch failed:`, e instanceof Error ? e.message : e);
       }
-      if (i + 1 < missing.length) await sleep(120);
+      if (i + 1 < missing.length && i + 1 < maxIndividual) await sleep(120);
+    }
+    if (missing.length > maxIndividual) {
+      console.warn(
+        `Skipped individual fetch for ${missing.length - maxIndividual} tracks (cap ${maxIndividual})`,
+      );
     }
   }
   return out;

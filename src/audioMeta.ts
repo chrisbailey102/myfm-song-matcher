@@ -99,6 +99,11 @@ export async function resolveTrackAudioMeta(
   const ids = [...new Set(resolved.map((x) => x.track.id))];
   const byId = new Map<string, ResolvedTrack>();
   for (const r of resolved) byId.set(r.track.id, r);
+  // Per-track fallbacks (FreqBlog/Brizm/GetSongBPM) can take many minutes on big
+  // playlists and used to soft-lock the enrich worker. Keep a hard budget.
+  const fallbackBudgetMs = 40_000;
+  const fallbackStarted = Date.now();
+  const budgetLeft = () => Date.now() - fallbackStarted < fallbackBudgetMs;
 
   try {
     const spotify = await getAudioFeatures(ids);
@@ -143,6 +148,12 @@ export async function resolveTrackAudioMeta(
       let filled = 0;
       let i = 0;
       for (const id of missingAfterRecco) {
+        if (!budgetLeft()) {
+          onStatus?.(
+            `FreqBlog: stopped early after budget (${filled} filled) — use Fill missing BPM/key for the rest.`,
+          );
+          break;
+        }
         i++;
         const r = byId.get(id);
         if (!r) continue;
@@ -187,6 +198,12 @@ export async function resolveTrackAudioMeta(
       let filled = 0;
       let i = 0;
       for (const id of missingAfterFreq) {
+        if (!budgetLeft()) {
+          onStatus?.(
+            `Brizm: stopped early after budget (${filled} filled) — use Fill missing BPM/key for the rest.`,
+          );
+          break;
+        }
         i++;
         const r = byId.get(id);
         if (!r) continue;
@@ -230,8 +247,21 @@ export async function resolveTrackAudioMeta(
     return out;
   }
 
+  if (!budgetLeft()) {
+    onStatus?.(
+      `Skipping GetSongBPM for ${missing.length} tracks (enrich time budget) — use Fill missing BPM/key.`,
+    );
+    return out;
+  }
+
   let i = 0;
   for (const id of missing) {
+    if (!budgetLeft()) {
+      onStatus?.(
+        `GetSongBPM: stopped early after budget — use Fill missing BPM/key for the rest.`,
+      );
+      break;
+    }
     i++;
     const row = byId.get(id)?.row;
     if (!row) continue;
