@@ -28,8 +28,25 @@ export async function getJobById(id: string): Promise<DbJob | null> {
   return queryOne<DbJob>(`SELECT * FROM jobs WHERE id = $1`, [id]);
 }
 
+/** Re-queue jobs left mid-run after a process restart/deploy. */
+export async function requeueInterruptedJobs(): Promise<number> {
+  const rows = await query<{ id: string }>(
+    `UPDATE jobs
+     SET status = 'pending',
+         progress_label = CASE
+           WHEN progress_label IS NULL OR progress_label = '' THEN 'Retrying after restart…'
+           ELSE progress_label
+         END,
+         updated_at = $1
+     WHERE status = 'running'
+     RETURNING id`,
+    [now()],
+  );
+  return rows.length;
+}
+
 export async function claimNextPendingJob(): Promise<DbJob | null> {
-  // Recover jobs left "running" after a crash/deploy (UI shows enrich: 0/0 — …).
+  // Also recover if a job was marked running but the process died without restart hooks.
   const staleMs = 15 * 60_000;
   await exec(
     `UPDATE jobs

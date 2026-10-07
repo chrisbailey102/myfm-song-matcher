@@ -5,6 +5,7 @@ import {
   completeJob,
   updateJobProgress,
   claimNextPendingJob,
+  requeueInterruptedJobs,
 } from "./db/jobs.js";
 import { updateProjectStatus, getProjectById, updateProjectSpotifyMeta } from "./db/projects.js";
 import {
@@ -35,10 +36,18 @@ import type { EnrichedSong } from "./types.js";
 let running = false;
 
 export function startJobWorker(): void {
+  void (async () => {
+    try {
+      const n = await requeueInterruptedJobs();
+      if (n > 0) console.error(`Re-queued ${n} interrupted job(s) after restart`);
+    } catch (e) {
+      console.error("Failed to re-queue interrupted jobs:", e);
+    }
+    void processNextJob();
+  })();
   setInterval(() => {
     void processNextJob();
   }, 2000);
-  void processNextJob();
 }
 
 async function processNextJob(): Promise<void> {
