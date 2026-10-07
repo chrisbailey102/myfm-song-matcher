@@ -74,6 +74,7 @@ async function runEnrichJob(jobId: string, projectId: string): Promise<void> {
   if (!project.playlist_id) throw new Error("Project has no playlist");
 
   await updateProjectStatus(projectId, "importing");
+  await updateJobProgress(jobId, 0, 1, "Refreshing Spotify login…");
   const token = await ensureUserAccessToken(user);
 
   await updateJobProgress(jobId, 0, 1, "Loading playlist tracks…");

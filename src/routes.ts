@@ -89,8 +89,57 @@ export function registerRoutes(app: Express): void {
     },
   });
 
-  app.get("/api/health", (_req, res) => {
-    res.json({ ok: true });
+  app.get("/api/health", async (_req, res) => {
+    const clientId = process.env.SPOTIFY_CLIENT_ID?.trim() || "";
+    const clientSecret = process.env.SPOTIFY_CLIENT_SECRET?.trim() || "";
+    const spotifyConfigured = Boolean(clientId && clientSecret);
+    let spotifyToken = "skipped" as "skipped" | "ok" | "fail";
+    let spotifySearch = "skipped" as "skipped" | "ok" | "fail";
+    let spotifyDetail = "";
+    if (spotifyConfigured) {
+      try {
+        const tokenRes = await fetch("https://accounts.spotify.com/api/token", {
+          method: "POST",
+          headers: {
+            Authorization:
+              "Basic " + Buffer.from(`${clientId}:${clientSecret}`).toString("base64"),
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: new URLSearchParams({ grant_type: "client_credentials" }),
+        });
+        const tokenBody = await tokenRes.text();
+        if (!tokenRes.ok) {
+          spotifyToken = "fail";
+          spotifyDetail = `token ${tokenRes.status}: ${tokenBody.slice(0, 180)}`;
+        } else {
+          spotifyToken = "ok";
+          const { access_token } = JSON.parse(tokenBody) as { access_token: string };
+          const searchRes = await fetch(
+            "https://api.spotify.com/v1/search?q=track:Alive&type=track&limit=1",
+            { headers: { Authorization: `Bearer ${access_token}` } },
+          );
+          const searchBody = await searchRes.text();
+          if (!searchRes.ok) {
+            spotifySearch = "fail";
+            spotifyDetail = `search ${searchRes.status}: ${searchBody.slice(0, 180)}`;
+          } else {
+            spotifySearch = "ok";
+          }
+        }
+      } catch (e) {
+        spotifyToken = "fail";
+        spotifyDetail = e instanceof Error ? e.message : String(e);
+      }
+    } else {
+      spotifyDetail = "SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET missing on server";
+    }
+    res.json({
+      ok: true,
+      spotifyConfigured,
+      spotifyToken,
+      spotifySearch,
+      spotifyDetail: spotifyDetail || undefined,
+    });
   });
 
   app.get("/api/auth/me", async (req, res) => {

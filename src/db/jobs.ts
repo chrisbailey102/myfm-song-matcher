@@ -29,6 +29,20 @@ export async function getJobById(id: string): Promise<DbJob | null> {
 }
 
 export async function claimNextPendingJob(): Promise<DbJob | null> {
+  // Recover jobs left "running" after a crash/deploy (UI shows enrich: 0/0 — …).
+  const staleMs = 15 * 60_000;
+  await exec(
+    `UPDATE jobs
+     SET status = 'pending',
+         progress_label = CASE
+           WHEN progress_label IS NULL OR progress_label = '' THEN 'Retrying after interrupt…'
+           ELSE progress_label
+         END,
+         updated_at = $1
+     WHERE status = 'running' AND updated_at < $2`,
+    [now(), now() - staleMs],
+  );
+
   const job = await queryOne<DbJob>(
     `SELECT * FROM jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`,
   );
