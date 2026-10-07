@@ -18,7 +18,7 @@ export async function createJob(projectId: string, type: string): Promise<DbJob>
   const ts = now();
   await exec(
     `INSERT INTO jobs (id, project_id, type, status, progress, progress_total, progress_label, created_at, updated_at)
-     VALUES ($1, $2, $3, 'pending', 0, 0, '', $4, $4)`,
+     VALUES ($1, $2, $3, 'pending', 0, 1, 'Queued…', $4, $4)`,
     [id, projectId, type, ts],
   );
   return (await getJobById(id))!;
@@ -47,12 +47,13 @@ export async function requeueInterruptedJobs(): Promise<number> {
 
 export async function claimNextPendingJob(): Promise<DbJob | null> {
   // Recover jobs marked running but abandoned (crash / hung fetch without restart).
-  const staleMs = 5 * 60_000;
+  const staleMs = 2 * 60_000;
   await exec(
     `UPDATE jobs
      SET status = 'pending',
          progress_label = CASE
-           WHEN progress_label IS NULL OR progress_label = '' THEN 'Retrying after interrupt…'
+           WHEN progress_label IS NULL OR progress_label = '' OR progress_label = 'Queued…'
+             THEN 'Retrying after interrupt…'
            ELSE progress_label
          END,
          updated_at = $1
@@ -60,15 +61,46 @@ export async function claimNextPendingJob(): Promise<DbJob | null> {
     [now(), now() - staleMs],
   );
 
-  const job = await queryOne<DbJob>(
-    `SELECT * FROM jobs WHERE status = 'pending' ORDER BY created_at ASC LIMIT 1`,
+  // Atomically claim the oldest pending job in one statement (pooler-safe).
+  const claimed = await query<{ id: string }>(
+    `UPDATE jobs j
+     SET status = 'running',
+         progress_label = CASE
+           WHEN j.progress_label IS NULL OR j.progress_label = '' OR j.progress_label = 'Queued…'
+             THEN 'Starting…'
+           ELSE j.progress_label
+         END,
+         updated_at = $1
+     WHERE j.id = (
+       SELECT id FROM jobs
+       WHERE status = 'pending'
+       ORDER BY created_at ASC
+       LIMIT 1
+     )
+     RETURNING j.id`,
+    [now()],
   );
-  if (!job) return null;
-  await exec(
-    `UPDATE jobs SET status = 'running', updated_at = $1 WHERE id = $2 AND status = 'pending'`,
-    [now(), job.id],
+  if (!claimed.length) return null;
+  return getJobById(claimed[0].id);
+}
+
+/** Mark a specific pending job running and return it (or null if already taken). */
+export async function claimJobById(jobId: string): Promise<DbJob | null> {
+  const claimed = await query<{ id: string }>(
+    `UPDATE jobs
+     SET status = 'running',
+         progress_label = CASE
+           WHEN progress_label IS NULL OR progress_label = '' OR progress_label = 'Queued…'
+             THEN 'Starting…'
+           ELSE progress_label
+         END,
+         updated_at = $2
+     WHERE id = $1 AND status = 'pending'
+     RETURNING id`,
+    [jobId, now()],
   );
-  return getJobById(job.id);
+  if (!claimed.length) return null;
+  return getJobById(jobId);
 }
 
 export async function updateJobProgress(
@@ -106,12 +138,19 @@ export async function hasActiveJob(
   projectId: string,
   type?: string,
 ): Promise<boolean> {
-  // Ignore abandoned jobs so a hung enrich cannot block "Update from Spotify".
-  const freshAfter = now() - 5 * 60_000;
+  // Only treat jobs as active if they have actually started (past Queued / empty 0/0).
+  // Stuck "0/0 — …" / "Queued…" must not block Update from Spotify.
+  const freshAfter = now() - 10 * 60_000;
   if (type) {
     const row = await queryOne<{ ok: number }>(
       `SELECT 1::int AS ok FROM jobs
-       WHERE project_id = $1 AND type = $2 AND status IN ('pending', 'running')
+       WHERE project_id = $1 AND type = $2
+         AND status IN ('pending', 'running')
+         AND coalesce(progress_label, '') <> ''
+         AND progress_label <> 'Queued…'
+         AND progress_label <> 'Starting…'
+         AND progress_label NOT LIKE 'Retrying%'
+         AND progress_total > 0
          AND updated_at >= $3
        LIMIT 1`,
       [projectId, type, freshAfter],
@@ -120,7 +159,13 @@ export async function hasActiveJob(
   }
   const row = await queryOne<{ ok: number }>(
     `SELECT 1::int AS ok FROM jobs
-     WHERE project_id = $1 AND status IN ('pending', 'running')
+     WHERE project_id = $1
+       AND status IN ('pending', 'running')
+       AND coalesce(progress_label, '') <> ''
+       AND progress_label <> 'Queued…'
+       AND progress_label <> 'Starting…'
+       AND progress_label NOT LIKE 'Retrying%'
+       AND progress_total > 0
        AND updated_at >= $2
      LIMIT 1`,
     [projectId, freshAfter],

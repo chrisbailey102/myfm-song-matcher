@@ -5,6 +5,7 @@ import {
   completeJob,
   updateJobProgress,
   claimNextPendingJob,
+  claimJobById,
   requeueInterruptedJobs,
 } from "./db/jobs.js";
 import { updateProjectStatus, getProjectById, updateProjectSpotifyMeta } from "./db/projects.js";
@@ -37,7 +38,7 @@ let running = false;
 let currentJobId: string | null = null;
 let currentJobStartedAt = 0;
 /** Soft cap so a hung Spotify call cannot block the queue forever. */
-const JOB_WATCHDOG_MS = 12 * 60_000;
+const JOB_WATCHDOG_MS = 3 * 60_000;
 
 export function startJobWorker(): void {
   void (async () => {
@@ -54,7 +55,7 @@ export function startJobWorker(): void {
   }, 2000);
   setInterval(() => {
     void watchdogStuckJob();
-  }, 30_000);
+  }, 15_000);
 }
 
 /** Call after createJob so imports don't wait on the poll interval. */
@@ -62,28 +63,100 @@ export function kickJobWorker(): void {
   void processNextJob();
 }
 
-async function watchdogStuckJob(): Promise<void> {
-  if (!running || !currentJobId) return;
-  if (Date.now() - currentJobStartedAt < JOB_WATCHDOG_MS) return;
+/** Prefer running this exact job now (used right after creating an enrich job). */
+export function kickJobWorkerFor(jobId: string): void {
+  void processSpecificJob(jobId);
+}
+
+export function getWorkerStatus(): {
+  running: boolean;
+  currentJobId: string | null;
+  runningForMs: number;
+} {
+  return {
+    running,
+    currentJobId,
+    runningForMs: running && currentJobStartedAt ? Date.now() - currentJobStartedAt : 0,
+  };
+}
+
+async function unlockIfStale(maxMs = 60_000): Promise<void> {
+  if (!running) return;
+  if (Date.now() - currentJobStartedAt < maxMs) return;
   const stuckId = currentJobId;
-  console.error(
-    `Job ${stuckId} exceeded ${Math.round(JOB_WATCHDOG_MS / 60000)}m — forcing fail so the queue can continue`,
-  );
-  try {
-    await failJob(
-      stuckId,
-      `Timed out after ${Math.round(JOB_WATCHDOG_MS / 60000)} minutes (likely a hung Spotify request). Retry import, or Reconnect Spotify.`,
-    );
-  } catch (e) {
-    console.error("watchdog failJob error:", e);
+  console.error(`Unlocking stale in-memory job lock (${stuckId}, ${maxMs}ms)`);
+  if (stuckId) {
+    try {
+      await failJob(
+        stuckId,
+        "Import stalled — cleared automatically. Please retry Update from Spotify / re-import.",
+      );
+    } catch (e) {
+      console.error("unlock failJob error:", e);
+    }
   }
   running = false;
   currentJobId = null;
   currentJobStartedAt = 0;
+}
+
+async function watchdogStuckJob(): Promise<void> {
+  await unlockIfStale(JOB_WATCHDOG_MS);
+  void processNextJob();
+}
+
+async function executeJob(job: { id: string; project_id: string; type: string }): Promise<void> {
+  if (job.type === "enrich") {
+    await runEnrichJob(job.id, job.project_id);
+  } else if (job.type === "lyrics") {
+    await runLyricsJob(job.id, job.project_id);
+  } else if (job.type === "pairs") {
+    await runPairsJob(job.id, job.project_id);
+  } else {
+    await failJob(job.id, `Unknown job type: ${job.type}`);
+  }
+}
+
+async function processSpecificJob(jobId: string): Promise<void> {
+  await unlockIfStale(45_000);
+  if (running) {
+    // Another job is actively running; the poller will pick this one up next.
+    void processNextJob();
+    return;
+  }
+  let job;
+  try {
+    job = await claimJobById(jobId);
+    if (!job) {
+      // Already claimed/running/done — fall back to queue
+      void processNextJob();
+      return;
+    }
+  } catch (e) {
+    console.error("claimJobById failed:", e);
+    void processNextJob();
+    return;
+  }
+  running = true;
+  currentJobId = job.id;
+  currentJobStartedAt = Date.now();
+  try {
+    await executeJob(job);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`Job ${job.id} failed:`, e);
+    await failJob(job.id, msg);
+    await updateProjectStatus(job.project_id, "failed");
+  } finally {
+    running = false;
+    currentJobId = null;
+    currentJobStartedAt = 0;
+  }
   void processNextJob();
 }
 
 async function processNextJob(): Promise<void> {
+  await unlockIfStale(JOB_WATCHDOG_MS);
   if (running) return;
   let job;
   try {
@@ -97,15 +170,7 @@ async function processNextJob(): Promise<void> {
   currentJobId = job.id;
   currentJobStartedAt = Date.now();
   try {
-    if (job.type === "enrich") {
-      await runEnrichJob(job.id, job.project_id);
-    } else if (job.type === "lyrics") {
-      await runLyricsJob(job.id, job.project_id);
-    } else if (job.type === "pairs") {
-      await runPairsJob(job.id, job.project_id);
-    } else {
-      await failJob(job.id, `Unknown job type: ${job.type}`);
-    }
+    await executeJob(job);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error(`Job ${job.id} failed:`, e);

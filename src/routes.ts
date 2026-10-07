@@ -17,7 +17,6 @@ import {
   listJobsForProject,
   hasActiveJob,
   failStaleJobsForProject,
-  requeueInterruptedJobs,
 } from "./db/jobs.js";
 import { listSongsForProject, updateSongOverrides, getSongById, copySongToProject, deleteSongFromProject } from "./db/songs.js";
 import {
@@ -67,7 +66,13 @@ import {
 } from "./spotifyPlayback.js";
 import { searchProjectLyrics } from "./db/lyricsCache.js";
 import { resetCatalogData } from "./db/reset.js";
-import { getProjectPairs, getProjectAutomix, kickJobWorker } from "./worker.js";
+import {
+  getProjectPairs,
+  getProjectAutomix,
+  kickJobWorker,
+  kickJobWorkerFor,
+  getWorkerStatus,
+} from "./worker.js";
 import type { DbUser } from "./db/users.js";
 
 const oauthStates = new Map<string, number>();
@@ -146,6 +151,7 @@ export function registerRoutes(app: Express): void {
       spotifyToken,
       spotifySearch,
       spotifyDetail: spotifyDetail || undefined,
+      worker: getWorkerStatus(),
     });
   });
 
@@ -468,14 +474,20 @@ export function registerRoutes(app: Express): void {
         });
         return;
       }
+      // Always clear stuck 0/0 / Queued jobs first — they used to block this endpoint.
+      await failStaleJobsForProject(
+        project.id,
+        "Cleared previous stuck import before Update from Spotify.",
+      );
       if (await hasActiveJob(project.id)) {
-        res.status(409).json({ error: "An update is already running for this playlist." });
+        res.status(409).json({
+          error:
+            "An update is already running for this playlist (progressing). Wait a moment, or try Clear stuck import.",
+        });
         return;
       }
-      await failStaleJobsForProject(project.id);
-      await requeueInterruptedJobs();
       const job = await createJob(project.id, "enrich");
-      kickJobWorker();
+      kickJobWorkerFor(job.id);
       res.json({ ok: true, project, job });
     } catch (e) {
       res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
@@ -491,9 +503,8 @@ export function registerRoutes(app: Express): void {
         return;
       }
       const cleared = await failStaleJobsForProject(project.id);
-      await requeueInterruptedJobs();
       kickJobWorker();
-      res.json({ ok: true, cleared });
+      res.json({ ok: true, cleared, worker: getWorkerStatus() });
     } catch (e) {
       res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
     }
@@ -663,9 +674,8 @@ export function registerRoutes(app: Express): void {
         playlist_name: meta.name,
         playlist_url: meta.url,
       });
-      await requeueInterruptedJobs();
       const job = await createJob(project.id, "enrich");
-      kickJobWorker();
+      kickJobWorkerFor(job.id);
       res.json({ project, job });
     } catch (e) {
       res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
@@ -712,7 +722,7 @@ export function registerRoutes(app: Express): void {
           playlist_url: result.playlist.url,
         });
         job = await createJob(project.id, "enrich");
-        kickJobWorker();
+        kickJobWorkerFor(job.id);
       }
 
       res.json({

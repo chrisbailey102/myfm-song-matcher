@@ -3626,22 +3626,23 @@
         const running = jobs.find((j) => j.status === "running" || j.status === "pending");
         const failed = jobs.find((j) => j.status === "failed");
         const js = $("job-status");
-        // Stuck enrich with no progress (classic "0/0 — …") — clear and nudge the worker.
-        if (
+        // Stuck enrich that never leaves Queued / empty 0/0 — clear so Update works again.
+        const stuckQueued =
           running &&
           running.type === "enrich" &&
-          Number(running.progress) === 0 &&
-          Number(running.progress_total) === 0 &&
-          !running.progress_label &&
-          Date.now() - Number(running.updated_at || running.created_at || 0) > 90_000 &&
-          !window.__smClearingStuck
-        ) {
+          Number(running.progress || 0) === 0 &&
+          (!running.progress_label ||
+            running.progress_label === "Queued…" ||
+            running.progress_label === "Starting…" ||
+            running.progress_label.startsWith("Retrying")) &&
+          Date.now() - Number(running.updated_at || running.created_at || 0) > 20_000;
+        if (stuckQueued && !window.__smClearingStuck) {
           window.__smClearingStuck = true;
-          js.textContent = "Stuck import detected — clearing and you can retry…";
+          js.textContent = "Stuck import detected — clearing…";
           void api(`/api/projects/${currentProjectId}/clear-stuck-jobs`, { method: "POST" })
             .then(() => {
               js.textContent =
-                "Cleared stuck import. Use Update from Spotify (or re-import) to try again. If it fails, Reconnect Spotify.";
+                "Cleared stuck import. Click Update from Spotify to retry. If it fails again, Reconnect Spotify.";
             })
             .catch((e) => {
               js.textContent = "Stuck import — " + (e.message || e);
