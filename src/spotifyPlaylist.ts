@@ -80,6 +80,7 @@ async function spotifyUserGet(accessToken: string, url: string, maxAttempts = 6)
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
+      signal: AbortSignal.timeout(45_000),
     });
     if (res.ok || (res.status !== 429 && res.status !== 502 && res.status !== 503)) {
       return res;
@@ -107,6 +108,7 @@ async function spotifyUserJson(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const res = await fetch(url, {
       ...init,
+      signal: init.signal ?? AbortSignal.timeout(45_000),
       headers: {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",

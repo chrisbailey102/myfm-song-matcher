@@ -153,6 +153,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<{
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body,
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`Spotify token refresh failed: ${await res.text()}`);
   return res.json() as Promise<{ access_token: string; expires_in: number }>;

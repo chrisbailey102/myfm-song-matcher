@@ -46,8 +46,8 @@ export async function requeueInterruptedJobs(): Promise<number> {
 }
 
 export async function claimNextPendingJob(): Promise<DbJob | null> {
-  // Also recover if a job was marked running but the process died without restart hooks.
-  const staleMs = 15 * 60_000;
+  // Recover jobs marked running but abandoned (crash / hung fetch without restart).
+  const staleMs = 5 * 60_000;
   await exec(
     `UPDATE jobs
      SET status = 'pending',
@@ -106,20 +106,39 @@ export async function hasActiveJob(
   projectId: string,
   type?: string,
 ): Promise<boolean> {
+  // Ignore abandoned jobs so a hung enrich cannot block "Update from Spotify".
+  const freshAfter = now() - 5 * 60_000;
   if (type) {
     const row = await queryOne<{ ok: number }>(
       `SELECT 1::int AS ok FROM jobs
        WHERE project_id = $1 AND type = $2 AND status IN ('pending', 'running')
+         AND updated_at >= $3
        LIMIT 1`,
-      [projectId, type],
+      [projectId, type, freshAfter],
     );
     return Boolean(row);
   }
   const row = await queryOne<{ ok: number }>(
     `SELECT 1::int AS ok FROM jobs
      WHERE project_id = $1 AND status IN ('pending', 'running')
+       AND updated_at >= $2
      LIMIT 1`,
-    [projectId],
+    [projectId, freshAfter],
   );
   return Boolean(row);
+}
+
+/** Fail abandoned pending/running jobs for a project so a fresh import can start. */
+export async function failStaleJobsForProject(
+  projectId: string,
+  reason = "Cleared stuck job — please retry import.",
+): Promise<number> {
+  const rows = await query<{ id: string }>(
+    `UPDATE jobs
+     SET status = 'failed', error = $2, updated_at = $3
+     WHERE project_id = $1 AND status IN ('pending', 'running')
+     RETURNING id`,
+    [projectId, reason, now()],
+  );
+  return rows.length;
 }

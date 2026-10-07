@@ -11,7 +11,14 @@ import {
   startLibraryMetaBackfill,
   startProjectMetaBackfill,
 } from "./metaBackfill.js";
-import { createJob, getJobById, listJobsForProject, hasActiveJob } from "./db/jobs.js";
+import {
+  createJob,
+  getJobById,
+  listJobsForProject,
+  hasActiveJob,
+  failStaleJobsForProject,
+  requeueInterruptedJobs,
+} from "./db/jobs.js";
 import { listSongsForProject, updateSongOverrides, getSongById, copySongToProject, deleteSongFromProject } from "./db/songs.js";
 import {
   createProject,
@@ -60,7 +67,7 @@ import {
 } from "./spotifyPlayback.js";
 import { searchProjectLyrics } from "./db/lyricsCache.js";
 import { resetCatalogData } from "./db/reset.js";
-import { getProjectPairs, getProjectAutomix } from "./worker.js";
+import { getProjectPairs, getProjectAutomix, kickJobWorker } from "./worker.js";
 import type { DbUser } from "./db/users.js";
 
 const oauthStates = new Map<string, number>();
@@ -465,8 +472,28 @@ export function registerRoutes(app: Express): void {
         res.status(409).json({ error: "An update is already running for this playlist." });
         return;
       }
+      await failStaleJobsForProject(project.id);
+      await requeueInterruptedJobs();
       const job = await createJob(project.id, "enrich");
+      kickJobWorker();
       res.json({ ok: true, project, job });
+    } catch (e) {
+      res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
+    }
+  });
+
+  /** Clear a stuck enrich/lyrics job (0/0) so import can be retried. */
+  app.post("/api/projects/:id/clear-stuck-jobs", requireAuth, async (req, res) => {
+    try {
+      const project = await getProjectById(req.params.id);
+      if (!project || project.user_id !== authed(req).id) {
+        res.status(404).json({ error: "Playlist not found" });
+        return;
+      }
+      const cleared = await failStaleJobsForProject(project.id);
+      await requeueInterruptedJobs();
+      kickJobWorker();
+      res.json({ ok: true, cleared });
     } catch (e) {
       res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
     }
@@ -636,7 +663,9 @@ export function registerRoutes(app: Express): void {
         playlist_name: meta.name,
         playlist_url: meta.url,
       });
+      await requeueInterruptedJobs();
       const job = await createJob(project.id, "enrich");
+      kickJobWorker();
       res.json({ project, job });
     } catch (e) {
       res.status(400).json({ error: e instanceof Error ? e.message : String(e) });
@@ -683,6 +712,7 @@ export function registerRoutes(app: Express): void {
           playlist_url: result.playlist.url,
         });
         job = await createJob(project.id, "enrich");
+        kickJobWorker();
       }
 
       res.json({

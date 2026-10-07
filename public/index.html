@@ -3626,7 +3626,30 @@
         const running = jobs.find((j) => j.status === "running" || j.status === "pending");
         const failed = jobs.find((j) => j.status === "failed");
         const js = $("job-status");
-        if (backfillPollTimer) {
+        // Stuck enrich with no progress (classic "0/0 — …") — clear and nudge the worker.
+        if (
+          running &&
+          running.type === "enrich" &&
+          Number(running.progress) === 0 &&
+          Number(running.progress_total) === 0 &&
+          !running.progress_label &&
+          Date.now() - Number(running.updated_at || running.created_at || 0) > 90_000 &&
+          !window.__smClearingStuck
+        ) {
+          window.__smClearingStuck = true;
+          js.textContent = "Stuck import detected — clearing and you can retry…";
+          void api(`/api/projects/${currentProjectId}/clear-stuck-jobs`, { method: "POST" })
+            .then(() => {
+              js.textContent =
+                "Cleared stuck import. Use Update from Spotify (or re-import) to try again. If it fails, Reconnect Spotify.";
+            })
+            .catch((e) => {
+              js.textContent = "Stuck import — " + (e.message || e);
+            })
+            .finally(() => {
+              window.__smClearingStuck = false;
+            });
+        } else if (backfillPollTimer) {
           // keep backfill progress text
         } else if (running) {
           js.textContent = `${running.type}: ${running.progress}/${running.progress_total} — ${running.progress_label || "…"}`;

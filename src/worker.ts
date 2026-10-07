@@ -34,6 +34,10 @@ import { buildAutomix, type AutomixOptions } from "./automix.js";
 import type { EnrichedSong } from "./types.js";
 
 let running = false;
+let currentJobId: string | null = null;
+let currentJobStartedAt = 0;
+/** Soft cap so a hung Spotify call cannot block the queue forever. */
+const JOB_WATCHDOG_MS = 12 * 60_000;
 
 export function startJobWorker(): void {
   void (async () => {
@@ -48,13 +52,50 @@ export function startJobWorker(): void {
   setInterval(() => {
     void processNextJob();
   }, 2000);
+  setInterval(() => {
+    void watchdogStuckJob();
+  }, 30_000);
+}
+
+/** Call after createJob so imports don't wait on the poll interval. */
+export function kickJobWorker(): void {
+  void processNextJob();
+}
+
+async function watchdogStuckJob(): Promise<void> {
+  if (!running || !currentJobId) return;
+  if (Date.now() - currentJobStartedAt < JOB_WATCHDOG_MS) return;
+  const stuckId = currentJobId;
+  console.error(
+    `Job ${stuckId} exceeded ${Math.round(JOB_WATCHDOG_MS / 60000)}m — forcing fail so the queue can continue`,
+  );
+  try {
+    await failJob(
+      stuckId,
+      `Timed out after ${Math.round(JOB_WATCHDOG_MS / 60000)} minutes (likely a hung Spotify request). Retry import, or Reconnect Spotify.`,
+    );
+  } catch (e) {
+    console.error("watchdog failJob error:", e);
+  }
+  running = false;
+  currentJobId = null;
+  currentJobStartedAt = 0;
+  void processNextJob();
 }
 
 async function processNextJob(): Promise<void> {
   if (running) return;
-  const job = await claimNextPendingJob();
+  let job;
+  try {
+    job = await claimNextPendingJob();
+  } catch (e) {
+    console.error("claimNextPendingJob failed:", e);
+    return;
+  }
   if (!job) return;
   running = true;
+  currentJobId = job.id;
+  currentJobStartedAt = Date.now();
   try {
     if (job.type === "enrich") {
       await runEnrichJob(job.id, job.project_id);
@@ -72,6 +113,8 @@ async function processNextJob(): Promise<void> {
     await updateProjectStatus(job.project_id, "failed");
   } finally {
     running = false;
+    currentJobId = null;
+    currentJobStartedAt = 0;
   }
 }
 
@@ -113,6 +156,7 @@ async function runEnrichJob(jobId: string, projectId: string): Promise<void> {
   await upsertLibraryFromEnriched(enriched);
   await completeJob(jobId);
   await createJob(projectId, "lyrics");
+  kickJobWorker();
 }
 
 async function runLyricsJob(jobId: string, projectId: string): Promise<void> {
@@ -159,6 +203,7 @@ async function runLyricsJob(jobId: string, projectId: string): Promise<void> {
   await completeJob(jobId);
   await updateProjectStatus(projectId, "ready");
   await createJob(projectId, "pairs");
+  kickJobWorker();
 }
 
 async function runPairsJob(jobId: string, projectId: string): Promise<void> {
