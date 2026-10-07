@@ -28,19 +28,26 @@ export async function getJobById(id: string): Promise<DbJob | null> {
   return queryOne<DbJob>(`SELECT * FROM jobs WHERE id = $1`, [id]);
 }
 
-/** Re-queue jobs left mid-run after a process restart/deploy. */
+/**
+ * After a process restart/deploy, fail jobs left mid-run instead of re-queueing.
+ * Re-queueing the same hung enrich job was putting the worker into a death loop.
+ */
 export async function requeueInterruptedJobs(): Promise<number> {
   const rows = await query<{ id: string }>(
     `UPDATE jobs
-     SET status = 'pending',
+     SET status = 'failed',
+         error = $2,
          progress_label = CASE
-           WHEN progress_label IS NULL OR progress_label = '' THEN 'Retrying after restart…'
+           WHEN progress_label IS NULL OR progress_label = '' THEN 'Interrupted by restart'
            ELSE progress_label
          END,
          updated_at = $1
      WHERE status = 'running'
      RETURNING id`,
-    [now()],
+    [
+      now(),
+      "Interrupted by server restart while importing. Click Update from Spotify to retry.",
+    ],
   );
   return rows.length;
 }
