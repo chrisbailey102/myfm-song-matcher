@@ -38,7 +38,7 @@ let running = false;
 let currentJobId: string | null = null;
 let currentJobStartedAt = 0;
 /** Soft cap so a hung Spotify call cannot block the queue forever. */
-const JOB_WATCHDOG_MS = 3 * 60_000;
+const JOB_WATCHDOG_MS = 90_000;
 
 export function startJobWorker(): void {
   void (async () => {

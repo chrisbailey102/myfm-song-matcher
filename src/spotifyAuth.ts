@@ -127,6 +127,7 @@ export async function exchangeCodeForTokens(code: string): Promise<{
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body,
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) throw new Error(`Spotify token exchange failed: ${await res.text()}`);
   return res.json() as Promise<{

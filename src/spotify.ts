@@ -21,6 +21,7 @@ async function getClientToken(): Promise<string> {
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body,
+    signal: AbortSignal.timeout(30_000),
   });
   if (!res.ok) {
     const t = await res.text();
@@ -63,13 +64,15 @@ async function spotifyGet<T>(path: string, maxAttempts = 6): Promise<T> {
     const token = await getClientToken();
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(45_000),
     });
     if (res.ok) return res.json() as Promise<T>;
     lastStatus = res.status;
     lastBody = await res.text();
     const retryable = res.status === 429 || res.status === 502 || res.status === 503;
     if (!retryable || attempt === maxAttempts - 1) break;
-    const wait = retryAfterMs(res, attempt);
+    // Cap waits so enrich jobs cannot sit soft-locked for many minutes on 429s.
+    const wait = Math.min(retryAfterMs(res, attempt), 15_000);
     console.warn(
       `Spotify ${res.status} on ${path} — retry ${attempt + 1}/${maxAttempts - 1} in ${Math.round(wait / 1000)}s`,
     );

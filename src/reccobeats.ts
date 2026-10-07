@@ -46,6 +46,7 @@ export async function fetchReccoBeatsFeatures(
           "User-Agent":
             "SongMatcher/0.1 (+https://github.com/chrisbailey102/myfm-song-matcher)",
         },
+        signal: AbortSignal.timeout(20_000),
       },
     );
     if (!res.ok) {
